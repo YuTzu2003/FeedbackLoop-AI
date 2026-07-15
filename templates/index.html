@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>FeedbackLoop AI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header><a class="brand" href="/">FeedbackLoop <i>AI</i></a><a class="nav-link" href="/feedbacks">回饋紀錄</a></header>
+  <main class="workspace">
+    <aside class="upload-panel">
+      <p class="label">上傳檔案</p>
+      <label class="dropzone">
+        <input id="fileInput" type="file" accept=".csv,.xlsx,.xls,.pdf,.txt,.docx">
+        <span class="upload-icon">↑</span>
+        <strong>選擇或拖放檔案</strong>
+        <small>CSV、Excel、PDF、TXT、DOCX</small>
+      </label>
+      <div id="fileStatus" class="file-status">尚未選擇檔案</div>
+    </aside>
+    <section class="chat-panel">
+      <div id="conversation" class="conversation"><div class="empty"><span>✦</span><p>上傳檔案後即可開始提問</p></div></div>
+      <form id="questionForm" class="question-box">
+        <textarea id="question" rows="1" placeholder="輸入問題…" disabled></textarea>
+        <button id="askButton" type="submit" disabled>送出 ↗</button>
+      </form>
+    </section>
+  </main>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
