@@ -6,5 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "flask>=3.1.0",
+    "openai>=2.45.0",
+    "python-dotenv>=1.2.2",
     "weaviate-client>=4.22.0",
 ]

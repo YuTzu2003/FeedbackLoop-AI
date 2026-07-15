@@ -4,6 +4,7 @@ __pycache__/
 build/
 dist/
 wheels/
+uploads/
 .agents/
 *.egg-info
 
@@ -12,3 +13,8 @@ wheels/
 *.lock
 *.env
 .python-version
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+feedback.db
+feedbacks.jsonl
