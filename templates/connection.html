@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+
+{% block title %}系統連線｜FeedbackLoop AI{% endblock %}
+
+{% block nav_connection %}active{% endblock %}
+
+{% block content %}
+<main class="feedback-page">
+    <section class="page-heading">
+        <div>
+            <p class="eyebrow">WEAVIATE CONNECTION</p>
+            <h1>Weaviate 連線狀態</h1>
+            <p>目前僅確認服務可連線，不會建立 collection、寫入或讀取任何向量資料。</p>
+        </div>
+        <button id="refresh" class="primary-button">重新檢查</button>
+    </section>
+    <section class="metrics connection-metrics">
+        <article><small>服務狀態</small><strong id="ready">—</strong><span>Ready 檢查</span></article>
+        <article><small>存活狀態</small><strong id="live">—</strong><span>Live 檢查</span></article>
+    </section>
+    <section id="connectionMessage" class="connection-message">正在檢查 Weaviate 連線…</section>
+</main>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/connection.js') }}"></script>
+{% endblock %}

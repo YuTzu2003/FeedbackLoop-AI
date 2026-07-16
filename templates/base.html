@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}FeedbackLoop AI{% endblock %}</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+    <header class="topbar">
+        <a class="brand" href="/">FeedbackLoop <i>AI</i></a>
+        <nav>
+            <a class="{% block nav_index %}{% endblock %}" href="/">資料問答</a>
+            <a class="{% block nav_feedback %}{% endblock %}" href="/feedback">回饋紀錄</a>
+            <a class="{% block nav_connection %}{% endblock %}" href="/connection">系統連線</a>
+        </nav>
+        {% block topbar_extra %}{% endblock %}
+    </header>
+    {% block content %}{% endblock %}
+    {% block scripts %}{% endblock %}
+</body>
+</html>
