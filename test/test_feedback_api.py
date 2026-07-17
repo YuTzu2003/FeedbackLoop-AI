@@ -1,28 +1,16 @@
 import unittest
 import json
+import os
 from io import BytesIO
 from pathlib import Path
-from types import SimpleNamespace
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import app
+from services.config import load_settings
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
-
-class FakeWeaviateClient:
-    closed = False
-
-    def is_ready(self):
-        return True
-
-    def is_live(self):
-        return True
-
-    def close(self):
-        self.closed = True
 
 
 class WeaviateConnectionTests(unittest.TestCase):
@@ -46,16 +34,14 @@ class WeaviateConnectionTests(unittest.TestCase):
         app.app.config["UPLOAD_FOLDER"] = self.original_upload_folder
         self.temp_dir.cleanup()
 
-    @patch("app.weaviate.connect_to_local")
-    def test_status_checks_and_closes_connection_without_data_operations(self, connect):
-        fake_client = FakeWeaviateClient()
-        connect.return_value = fake_client
+    @patch("app.weaviate_status", return_value={"ready": True, "live": True})
+    def test_status_uses_the_rag_service(self, status):
 
         response = self.client.get("/api/weaviate/status")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json, {"ready": True, "live": True})
-        self.assertTrue(fake_client.closed)
+        status.assert_called_once_with(app.settings)
 
     def test_feedback_is_appended_as_jsonl(self):
         payload = {"score": "good", "note": "Clear", "question": "Q", "answer": "A", "history_id": "answer-1"}
@@ -96,20 +82,49 @@ class WeaviateConnectionTests(unittest.TestCase):
         self.assertEqual(notebook["name"], "report.csv")
         self.assertTrue((app.app.config["UPLOAD_FOLDER"] / notebook["stored_filename"]).exists())
 
-    @patch.object(app.llm_client.chat.completions, "create")
-    def test_notebook_history_is_sent_to_llm_and_new_answer_is_saved(self, create):
+    @patch("app.ingest_web_url", return_value={"id": "web-1", "name": "Example page", "source_type": "web", "url": "https://example.com", "chunk_count": 2})
+    def test_url_upload_creates_a_web_notebook_after_chunking(self, ingest):
+        response = self.client.post("/api/upload_url", json={"url": "https://example.com"})
+
+        self.assertEqual(response.status_code, 200)
+        notebook = app.read_jsonl(app.app.config["NOTEBOOK_LOG"], "notebook")[0]
+        self.assertEqual(notebook["source_type"], "web")
+        self.assertEqual(notebook["url"], "https://example.com")
+        self.assertEqual(notebook["chunk_count"], 2)
+        ingest.assert_called_once_with("https://example.com", app.settings)
+
+    def test_url_upload_rejects_an_empty_url(self):
+        response = self.client.post("/api/upload_url", json={"url": ""})
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("app.answer_from_chunks", return_value="答案來自來源內容")
+    @patch("app.retrieve_chunks", return_value=[{"title": "Example page", "url": "https://example.com", "chunk_index": 1, "score": 0.91, "content": "source text"}])
+    def test_web_notebook_question_uses_document_scoped_retrieval(self, retrieve, answer):
+        app.app.config["NOTEBOOK_LOG"].write_text(
+            json.dumps({"id": "web-1", "name": "Example page", "source_type": "web", "created_at": "2026-01-01T00:00:00+00:00"}) + "\n",
+            encoding="utf-8",
+        )
+
+        response = self.client.post("/api/ask", json={"question": "What is the source?", "notebook_id": "web-1"})
+
+        self.assertEqual(response.status_code, 200)
+        retrieve.assert_called_once_with("What is the source?", "web-1", app.settings)
+        answer.assert_called_once_with("What is the source?", retrieve.return_value, app.settings)
+        self.assertEqual(response.json["sources"][0]["url"], "https://example.com")
+
+    @patch("app.answer_from_history", return_value="The revenue increased.")
+    def test_notebook_history_is_sent_to_llm_and_new_answer_is_saved(self, answer):
         notebook = {"id": "book-1", "name": "report.csv", "created_at": "2026-01-01T00:00:00+00:00"}
         old_record = {"id": "old-1", "notebook_id": "book-1", "question": "What was the revenue?", "answer": "100", "created_at": "2026-01-01T00:00:00+00:00"}
         app.app.config["NOTEBOOK_LOG"].write_text(json.dumps(notebook) + "\n", encoding="utf-8")
         app.app.config["NOTEBOOK_HISTORY_LOG"].write_text(json.dumps(old_record) + "\n", encoding="utf-8")
-        create.return_value = SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="The revenue increased."))])
-
         response = self.client.post("/api/ask", json={"question": "Compare it with today.", "notebook_id": "book-1"})
 
         self.assertEqual(response.status_code, 200)
-        messages = create.call_args.kwargs["messages"]
+        messages = answer.call_args.args[0]
         self.assertIn({"role": "user", "content": "What was the revenue?"}, messages)
-        self.assertEqual(len(app.notebook_history("book-1")), 2)
+        self.assertEqual(len(app.notebook_history(app.app.config["NOTEBOOK_HISTORY_LOG"], "book-1")), 2)
 
     def test_notebook_apis_scope_history_to_the_requested_notebook(self):
         app.app.config["NOTEBOOK_LOG"].write_text('{"id":"book-1","name":"report.csv","created_at":"2026-01-01T00:00:00+00:00"}\n', encoding="utf-8")
@@ -128,7 +143,12 @@ class WeaviateConnectionTests(unittest.TestCase):
     def test_homepage_exposes_the_configured_llm_model(self):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn(app.llm_model, response.get_data(as_text=True))
+        self.assertIn(app.settings.llm_model, response.get_data(as_text=True))
+
+    def test_model_settings_require_environment_values(self):
+        with patch.dict(os.environ, {"LLM_MODEL": ""}):
+            with self.assertRaisesRegex(RuntimeError, "LLM_MODEL"):
+                load_settings()
 
     def test_homepage_inherits_base_template_and_marks_its_navigation_active(self):
         page = self.client.get("/").get_data(as_text=True)

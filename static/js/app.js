@@ -6,6 +6,9 @@ const conversation = document.querySelector("#conversation");
 const readyState = document.querySelector("#readyState");
 const notebookList = document.querySelector("#notebookList");
 const activeNotebook = document.querySelector("#activeNotebook");
+const showUrlBtn = document.querySelector("#showUrlBtn");
+const urlForm = document.querySelector("#urlForm");
+const urlInput = document.querySelector("#urlInput");
 let notebooks = [];
 let activeNotebookId = null;
 let feedbackHistoryIds = new Set();
@@ -15,6 +18,11 @@ fileInput.addEventListener("change", uploadFile);
 document.querySelector("#questionForm").addEventListener("submit", (event) => { event.preventDefault(); sendCurrentQuestion(); });
 questionInput.addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendCurrentQuestion(); } });
 notebookList.addEventListener("click", (event) => { const button = event.target.closest("[data-notebook-id]"); if (button) selectNotebook(button.dataset.notebookId); });
+showUrlBtn.addEventListener("click", () => {
+  urlForm.style.display = urlForm.style.display === "none" ? "flex" : "none";
+  if (urlForm.style.display === "flex") urlInput.focus();
+});
+urlForm.addEventListener("submit", (event) => { event.preventDefault(); uploadUrl(); });
 
 function sendCurrentQuestion() { const question = questionInput.value.trim(); if (question && activeNotebookId && !askButton.disabled) ask(question); }
 
@@ -65,6 +73,20 @@ async function uploadFile() {
   const data = await response.json();
   if (!response.ok) { fileStatus.textContent = data.error; return; }
   fileStatus.innerHTML = '<span class="file-mark"><i class="bi bi-check-lg" aria-hidden="true"></i></span><span><b>' + escapeHtml(data.filename) + '</b><small>已建立文件筆記本</small></span>';
+  await loadNotebooks();
+  await selectNotebook(data.notebook_id);
+}
+
+async function uploadUrl() {
+  const url = urlInput.value.trim();
+  if (!url) return;
+  fileStatus.textContent = "正在加入網址…";
+  urlForm.style.display = "none";
+  const response = await fetch("/api/upload_url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url }) });
+  const data = await response.json();
+  urlInput.value = "";
+  if (!response.ok) { fileStatus.textContent = data.error; return; }
+  fileStatus.innerHTML = '<span class="file-mark"><i class="bi bi-check-lg" aria-hidden="true"></i></span><span><b>' + escapeHtml(data.filename) + '</b><small>已加入網址</small></span>';
   await loadNotebooks();
   await selectNotebook(data.notebook_id);
 }
@@ -121,6 +143,13 @@ function renderAnswer(answer) {
   return escapeHtml(answer).replace(/\n/g, "<br>");
 }
 
-function escapeHtml(value) { const element = document.createElement("div"); element.textContent = value; return element.innerHTML; }
+function escapeHtml(value) {
+  if (typeof value === "object" && value) return formatSource(value);
+  const element = document.createElement("div"); element.textContent = value; return element.innerHTML;
+}
 function escapeAttribute(value) { return escapeHtml(value).replace(/"/g, "&quot;"); }
+function formatSource(source) {
+  const label = `${source.title} · chunk ${source.chunk_index} · ${(source.score * 100).toFixed(0)}%`;
+  return `<a href="${escapeAttribute(source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
+}
 loadNotebooks();
