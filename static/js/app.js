@@ -8,6 +8,7 @@ const notebookList = document.querySelector("#notebookList");
 const activeNotebook = document.querySelector("#activeNotebook");
 let notebooks = [];
 let activeNotebookId = null;
+let feedbackHistoryIds = new Set();
 const copyIcon = '<i class="bi bi-copy" aria-hidden="true"></i>';
 
 fileInput.addEventListener("change", uploadFile);
@@ -43,15 +44,16 @@ async function selectNotebook(notebookId) {
 
 async function loadNotebookHistory() {
   if (!activeNotebookId) return;
-  const response = await fetch(`/api/notebooks/${activeNotebookId}/history`);
-  const data = await response.json();
+  const [response, feedbackResponse] = await Promise.all([fetch(`/api/notebooks/${activeNotebookId}/history`), fetch("/api/feedbacks")]);
+  const [data, feedbackData] = await Promise.all([response.json(), feedbackResponse.json()]);
   if (!response.ok) return;
-  conversation.innerHTML = data.items.length ? data.items.map((item) => renderHistoryItem(item)).join("") : '<div class="empty-state"><div class="assistant-orb"><i class="bi bi-egg-fried" aria-hidden="true"></i></div><h3>開始這份文件的對話</h3><p>提出問題後，問答會保留在目前的筆記本中。</p></div>';
+  feedbackHistoryIds = new Set(feedbackData.items.map((item) => item.history_id).filter(Boolean));
+  conversation.innerHTML = data.items.length ? data.items.map((item) => renderHistoryItem(item)).join("") : '<div class="empty-state"><h3>開始這份文件的對話</h3><p>提出問題後，問答會保留在目前的筆記本中。</p></div>';
   conversation.scrollTop = conversation.scrollHeight;
 }
 
 function renderHistoryItem(item) {
-  return `<div class="message user">${escapeHtml(item.question)}</div>${answerMessage(item.answer, item.question)}`;
+  return `<div class="message user">${escapeHtml(item.question)}</div>${answerMessage(item.answer, item.question, item.id)}`;
 }
 
 async function uploadFile() {
@@ -78,12 +80,13 @@ async function ask(question) {
   conversation.querySelector(".loading")?.remove();
   askButton.disabled = false;
   if (!response.ok) { conversation.innerHTML += '<div class="message ai">' + escapeHtml(data.error) + '</div>'; return; }
-  conversation.innerHTML += answerMessage(data.answer, question, data.sources);
+  conversation.innerHTML += answerMessage(data.answer, question, data.history_id, data.sources);
   conversation.scrollTop = conversation.scrollHeight;
 }
 
-function answerMessage(answer, question, sources = ["AI 文字分析"]) {
-  return '<div class="message ai"><div class="answer">' + escapeHtml(answer).replace(/\n/g, "<br>") + '</div><div class="sources">參考：' + sources.map(escapeHtml).join("、") + '</div><div class="answer-actions"><button class="icon-button" data-copy aria-label="複製回答" title="複製回答">' + copyIcon + '</button></div><div class="feedback" data-question="' + escapeAttribute(question) + '" data-answer="' + escapeAttribute(answer) + '"><span>這個回答有幫助嗎？</span><button data-score="good">✓ 有幫助</button><button data-score="bad">× 需要改善</button></div></div>';
+function answerMessage(answer, question, historyId, sources = ["AI 文字分析"]) {
+  const feedback = feedbackHistoryIds.has(historyId) ? '<div class="feedback"><b>✓ 已回饋</b></div>' : '<div class="feedback" data-history-id="' + escapeAttribute(historyId) + '" data-question="' + escapeAttribute(question) + '" data-answer="' + escapeAttribute(answer) + '"><button class="feedback-icon" data-score="good" aria-label="有幫助" title="有幫助"><i class="bi bi-hand-thumbs-up" aria-hidden="true"></i></button><button class="feedback-icon" data-score="bad" aria-label="需要改善" title="需要改善"><i class="bi bi-hand-thumbs-down" aria-hidden="true"></i></button></div>';
+  return '<div class="message ai"><div class="answer markdown-body">' + renderAnswer(answer) + '</div><div class="answer-actions">' + feedback + '<button class="icon-button" data-copy aria-label="複製回答" title="複製回答">' + copyIcon + '</button></div><div class="sources">參考：' + sources.map(escapeHtml).join("、") + '</div></div>';
 }
 
 conversation.addEventListener("click", async (event) => {
@@ -92,16 +95,31 @@ conversation.addEventListener("click", async (event) => {
   const scoreButton = event.target.closest("[data-score]");
   if (!scoreButton) return;
   const feedback = scoreButton.closest(".feedback");
-  feedback.innerHTML = '<input class="feedback-note" placeholder="補充說明（選填）"><button data-save-score="' + scoreButton.dataset.score + '">送出回饋</button>';
+  if (feedbackHistoryIds.has(feedback.dataset.historyId)) return;
+  if (scoreButton.dataset.score === "good") { saveFeedback(feedback, "good", ""); return; }
+  feedback.innerHTML = '<input class="feedback-note" placeholder="請說明需要改善的地方" required><button data-save-score="bad">送出回饋</button>';
 });
 conversation.addEventListener("click", async (event) => {
   const saveButton = event.target.closest("[data-save-score]");
   if (!saveButton) return;
-  const feedback = saveButton.closest(".feedback"); saveButton.disabled = true;
-  const response = await fetch("/api/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ score: saveButton.dataset.saveScore, note: feedback.querySelector("input").value, question: feedback.dataset.question, answer: feedback.dataset.answer }) });
-  const data = await response.json();
-  feedback.innerHTML = response.ok ? "<b>✓ 回饋已儲存</b>" : "<b>" + escapeHtml(data.error) + "</b>";
+  const feedback = saveButton.closest(".feedback");
+  const note = feedback.querySelector("input").value.trim();
+  if (!note) { feedback.querySelector("input").focus(); return; }
+  saveFeedback(feedback, saveButton.dataset.saveScore, note);
 });
+
+async function saveFeedback(feedback, score, note) {
+  feedback.querySelectorAll("button").forEach((button) => { button.disabled = true; });
+  const response = await fetch("/api/feedback", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ score, note, question: feedback.dataset.question, answer: feedback.dataset.answer, history_id: feedback.dataset.historyId }) });
+  const data = await response.json();
+  if (response.ok) feedbackHistoryIds.add(feedback.dataset.historyId);
+  feedback.innerHTML = response.ok ? "<b>✓ 回饋已儲存</b>" : "<b>" + escapeHtml(data.error) + "</b>";
+}
+
+function renderAnswer(answer) {
+  if (window.marked && window.DOMPurify) return DOMPurify.sanitize(marked.parse(answer, { breaks: true }));
+  return escapeHtml(answer).replace(/\n/g, "<br>");
+}
 
 function escapeHtml(value) { const element = document.createElement("div"); element.textContent = value; return element.innerHTML; }
 function escapeAttribute(value) { return escapeHtml(value).replace(/"/g, "&quot;"); }

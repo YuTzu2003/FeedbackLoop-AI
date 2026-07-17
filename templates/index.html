@@ -23,8 +23,11 @@
     <div id="notebookList" class="notebook-list">
       <p>尚未建立筆記本。</p>
     </div>
-    <label class="dropzone"><input id="fileInput" type="file" accept=".csv,.xlsx,.xls,.pdf,.txt,.docx"><span class="upload-icon"><i class="bi bi-upload" aria-hidden="true"></i></span><strong>新增文件筆記本</strong><small>CSV、Excel、PDF、TXT、DOCX</small></label>
-    <div id="fileStatus" class="file-status"><span class="file-mark"><i class="bi bi-plus-lg" aria-hidden="true"></i></span><span>上傳文件後即可開始提問</span></div>
+    <label class="dropzone"><input id="fileInput" type="file" accept=".csv,.xlsx,.xls,.pdf,.txt,.docx"><span
+        class="upload-icon"><i class="bi bi-upload"
+          aria-hidden="true"></i></span><strong>新增文件筆記本</strong><small>CSV、Excel、PDF、TXT、DOCX</small></label>
+    <div id="fileStatus" class="file-status"><span class="file-mark"><i class="bi bi-plus-lg"
+          aria-hidden="true"></i></span><span>上傳文件後即可開始提問</span></div>
   </aside>
   <section class="chat-panel">
     <div class="chat-header">
@@ -32,21 +35,26 @@
         <p class="eyebrow">AI ASSISTANT</p>
         <h2 id="activeNotebook">請先選擇文件筆記本</h2>
       </div>
-      <div class="header-meta d-flex align-items-center"><span id="readyState" class="status-pill">等待筆記本</span><span class="model-badge badge rounded-pill text-break" title="{{ llm_model }}"><i>MODEL</i>{{ llm_model }}</span></div>
+      <div class="header-meta d-flex align-items-center"><span id="readyState" class="status-pill">等待筆記本</span><span
+          class="model-badge badge rounded-pill text-break" title="{{ llm_model }}"><i>MODEL</i>{{ llm_model }}</span>
+      </div>
     </div>
     <div id="conversation" class="conversation">
       <div class="empty-state">
-        <div class="assistant-orb"><i class="bi bi-egg-fried" aria-hidden="true"></i></div>
         <h3>每份文件都有自己的對話</h3>
         <p>選擇筆記本後，可查看該文件的歷史問答並繼續提問。</p>
       </div>
     </div>
-    <form id="questionForm" class="question-box"><textarea id="question" rows="1" placeholder="針對此文件提出問題…" disabled></textarea><button id="askButton" type="submit" disabled aria-label="送出問題"><i class="bi bi-arrow-up" aria-hidden="true"></i></button></form>
+    <form id="questionForm" class="question-box"><textarea id="question" rows="1" placeholder="針對此文件提出問題…"
+        disabled></textarea><button id="askButton" type="submit" disabled aria-label="送出問題"><i class="bi bi-arrow-up"
+          aria-hidden="true"></i></button></form>
     <p class="helper">問答會自動保存至目前筆記本</p>
   </section>
 </main>
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
 <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 {% endblock %}

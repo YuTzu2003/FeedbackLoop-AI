@@ -192,14 +192,24 @@ def ask():
 @app.post("/api/feedback")
 def save_feedback():
     payload = request.json or {}
+    history_id = payload.get("history_id", "").strip()
     if payload.get("score") not in {"good", "bad"}:
         return jsonify(error="Invalid feedback score."), 400
+    if not history_id:
+        return jsonify(error="缺少問答紀錄。"), 400
+    if payload["score"] == "bad" and not payload.get("note", "").strip():
+        return jsonify(error="請說明需要改善的地方。"), 400
     record = {
         "score": payload["score"], "note": payload.get("note", "").strip(),
         "question": payload.get("question", "").strip(), "answer": payload.get("answer", "").strip(),
+        "history_id": history_id,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
-    append_jsonl(app.config["FEEDBACK_LOG"], feedback_log_lock, record)
+    with feedback_log_lock:
+        if any(item.get("history_id") == history_id for item in read_jsonl(app.config["FEEDBACK_LOG"], "feedback")):
+            return jsonify(error="此回答已提交回饋。"), 409
+        with app.config["FEEDBACK_LOG"].open("a", encoding="utf-8") as log:
+            log.write(json.dumps(record, ensure_ascii=False) + "\n")
     return jsonify(status="saved"), 201
 
 

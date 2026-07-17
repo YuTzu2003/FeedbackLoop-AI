@@ -46,7 +46,7 @@ class WeaviateConnectionTests(unittest.TestCase):
         app.app.config["UPLOAD_FOLDER"] = self.original_upload_folder
         self.temp_dir.cleanup()
 
-    @patch("main.weaviate.connect_to_local")
+    @patch("app.weaviate.connect_to_local")
     def test_status_checks_and_closes_connection_without_data_operations(self, connect):
         fake_client = FakeWeaviateClient()
         connect.return_value = fake_client
@@ -58,15 +58,24 @@ class WeaviateConnectionTests(unittest.TestCase):
         self.assertTrue(fake_client.closed)
 
     def test_feedback_is_appended_as_jsonl(self):
-        response = self.client.post("/api/feedback", json={"score": "good", "note": "Clear", "question": "Q", "answer": "A"})
+        payload = {"score": "good", "note": "Clear", "question": "Q", "answer": "A", "history_id": "answer-1"}
+        response = self.client.post("/api/feedback", json=payload)
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json["status"], "saved")
         record = json.loads(app.app.config["FEEDBACK_LOG"].read_text(encoding="utf-8"))
         self.assertEqual(record["score"], "good")
         self.assertEqual(record["note"], "Clear")
+        self.assertEqual(record["history_id"], "answer-1")
         listed = self.client.get("/api/feedbacks")
         self.assertEqual(listed.status_code, 200)
         self.assertEqual(listed.json["items"][0]["question"], "Q")
+        duplicate = self.client.post("/api/feedback", json=payload)
+        self.assertEqual(duplicate.status_code, 409)
+
+    def test_negative_feedback_requires_a_note(self):
+        response = self.client.post("/api/feedback", json={"score": "bad", "note": " ", "history_id": "answer-2"})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("請說明需要改善的地方", response.json["error"])
 
     def test_feedback_and_connection_pages_use_the_correct_templates(self):
         self.assertIn("回饋紀錄", self.client.get("/feedback").get_data(as_text=True))
@@ -133,13 +142,28 @@ class WeaviateConnectionTests(unittest.TestCase):
 
     def test_answer_actions_use_an_accessible_copy_icon(self):
         script = (PROJECT_ROOT / "static" / "js" / "app.js").read_text(encoding="utf-8")
+        styles = (PROJECT_ROOT / "static" / "css" / "style.css").read_text(encoding="utf-8")
         self.assertIn('aria-label="複製回答"', script)
         self.assertIn('bi bi-copy', script)
         self.assertIn('bi bi-check2', script)
+        self.assertNotIn('ai-answer-icon', script)
+        self.assertIn('bi bi-hand-thumbs-up', script)
+        self.assertIn('bi bi-hand-thumbs-down', script)
+        self.assertIn('class="answer-actions"', script)
+        self.assertLess(script.index('data-score="good"'), script.index('data-score="bad"'))
+        self.assertLess(script.index('data-score="bad"'), script.index('data-copy'))
+        self.assertNotIn('這個回答有幫助嗎', script)
+        self.assertIn('scoreButton.dataset.score === "good"', script)
+        self.assertIn('DOMPurify.sanitize(marked.parse', script)
+        self.assertIn('history_id: feedback.dataset.historyId', script)
+        self.assertIn('.answer-actions', styles)
+        self.assertIn('line-height: 1', styles)
 
     def test_homepage_loads_bootstrap_icons(self):
         page = self.client.get("/").get_data(as_text=True)
         self.assertIn("bootstrap-icons", page)
+        self.assertIn("marked/marked.min.js", page)
+        self.assertIn("dompurify/dist/purify.min.js", page)
 
 
 if __name__ == "__main__":
