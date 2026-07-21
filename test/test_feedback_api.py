@@ -7,7 +7,7 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import app
-from services.config import load_settings
+from services.llm import load_llm_settings
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -110,7 +110,7 @@ class WeaviateConnectionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         retrieve.assert_called_once_with("What is the source?", "web-1", app.settings)
-        answer.assert_called_once_with("What is the source?", retrieve.return_value, app.settings)
+        answer.assert_called_once_with("What is the source?", retrieve.return_value, app.llm_settings)
         self.assertEqual(response.json["sources"][0]["url"], "https://example.com")
 
     @patch("app.answer_from_history", return_value="The revenue increased.")
@@ -143,12 +143,12 @@ class WeaviateConnectionTests(unittest.TestCase):
     def test_homepage_exposes_the_configured_llm_model(self):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
-        self.assertIn(app.settings.llm_model, response.get_data(as_text=True))
+        self.assertIn(app.llm_settings.model, response.get_data(as_text=True))
 
     def test_model_settings_require_environment_values(self):
         with patch.dict(os.environ, {"LLM_MODEL": ""}):
             with self.assertRaisesRegex(RuntimeError, "LLM_MODEL"):
-                load_settings()
+                load_llm_settings()
 
     def test_homepage_inherits_base_template_and_marks_its_navigation_active(self):
         page = self.client.get("/").get_data(as_text=True)

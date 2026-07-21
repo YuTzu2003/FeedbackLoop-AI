@@ -2,33 +2,19 @@ from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
 from uuid import uuid4
-
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
-
+from pipeline.retrieve_answer import answer_from_chunks, answer_from_history, retrieve_chunks
+from pipeline.load_url import ingest_web_url
 from services.config import load_settings
-from services.rag import (
-    RagServiceError,
-    answer_from_chunks,
-    answer_from_history,
-    delete_document,
-    ingest_web_url,
-    retrieve_chunks,
-    weaviate_status,
-)
-from services.storage import (
-    append_jsonl,
-    delete_notebook_records,
-    get_notebook,
-    notebook_history,
-    read_jsonl,
-    save_feedback,
-    save_upload,
-)
-
+from services.api import load_llm_settings, get_system_prompt
+from services.vectordb import RagServiceError, delete_document, weaviate_status
+from services.storage import (append_jsonl,delete_notebook_records,get_notebook,notebook_history,read_jsonl,save_feedback,save_upload,)
 
 load_dotenv()
+
 settings = load_settings()
+llm_settings = load_llm_settings()
 app = Flask(__name__)
 BASE_DIR = Path(__file__).resolve().parent
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
@@ -49,7 +35,7 @@ def current_notebook(notebook_id: str) -> dict | None:
 
 @app.get("/")
 def index():
-    return render_template("index.html", llm_model=settings.llm_model)
+    return render_template("index.html", llm_model=llm_settings.model)
 
 
 @app.get("/feedback")
@@ -158,14 +144,14 @@ def ask():
             chunks = retrieve_chunks(question, notebook_id, settings)
             if not chunks:
                 return jsonify(error="找不到此網址來源的相關內容。"), 404
-            answer = answer_from_chunks(question, chunks, settings)
+            answer = answer_from_chunks(question, chunks, llm_settings)
             sources = [{key: item[key] for key in ("title", "url", "chunk_index", "score")} for item in chunks]
         else:
-            messages = [{"role": "system", "content": "你是一個樂於助人的 AI 助手。請始終以繁體中文清晰、簡明地回答問題，絕對不可以回傳空白或無意義的內容。"}]
+            messages = [get_system_prompt()]
             for item in reversed(notebook_history(app.config["NOTEBOOK_HISTORY_LOG"], notebook_id)[:3]):
                 messages.extend([{"role": "user", "content": item["question"]}, {"role": "assistant", "content": item["answer"]}])
             messages.append({"role": "user", "content": question})
-            answer = answer_from_history(messages, settings)
+            answer = answer_from_history(messages, llm_settings)
             sources = ["AI 文字分析"]
     except RagServiceError as error:
         return jsonify(error=str(error)), error.status_code
