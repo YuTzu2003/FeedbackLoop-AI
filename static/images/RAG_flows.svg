@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="720" viewBox="0 0 1500 720" role="img" aria-labelledby="title desc">
+  <title id="title">RAG flow with multi retrieval and RRF ranking</title>
+  <desc id="desc">RAG flow: user asks a question, LLM splits it into three queries, hybrid search retrieves three results per query, RRF fuses and ranks the nine results, top three are sent to LLM.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto" markerUnits="strokeWidth">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#334155"/>
+    </marker>
+    <filter id="shadow" x="-12%" y="-18%" width="124%" height="140%">
+      <feDropShadow dx="0" dy="8" stdDeviation="9" flood-color="#0f172a" flood-opacity="0.14"/>
+    </filter>
+    <style>
+      .bg { fill: #f8fafc; }
+      .card { fill: #fff; stroke: #d7dee8; stroke-width: 2; filter: url(#shadow); }
+      .blue { fill: #eef6ff; stroke: #93c5fd; }
+      .green { fill: #eefaf2; stroke: #86d39d; }
+      .orange { fill: #fff7ed; stroke: #f2bd68; }
+      .purple { fill: #f5f0ff; stroke: #b9a3ee; }
+      .mint { fill: #ecfdf7; stroke: #73c9b4; }
+      .title { font: 700 30px Arial, "Microsoft JhengHei", sans-serif; fill: #0f172a; }
+      .label { font: 700 23px Arial, "Microsoft JhengHei", sans-serif; fill: #0f172a; }
+      .small { font: 500 17px Arial, "Microsoft JhengHei", sans-serif; fill: #475569; }
+      .tiny { font: 600 15px Arial, "Microsoft JhengHei", sans-serif; fill: #475569; }
+      .mini { font: 700 14px Arial, "Microsoft JhengHei", sans-serif; fill: #0f172a; }
+      .arrow { stroke: #334155; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .thin { stroke: #94a3b8; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+      .chip { fill: #ffffff; stroke: #cbd5e1; stroke-width: 1.5; }
+      .a { fill: #dcfce7; stroke: #86efac; }
+      .b { fill: #e0f2fe; stroke: #7dd3fc; }
+      .low { fill: #fee2e2; stroke: #fca5a5; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1500" height="720" rx="28"/>
+  <text class="title" x="750" y="54" text-anchor="middle">RAG 多次檢索與 RRF 融合排序流程</text>
+
+  <rect class="card" x="45" y="275" width="170" height="110" rx="18"/>
+  <text class="label" x="130" y="322" text-anchor="middle">使用者提問</text>
+  <text class="small" x="130" y="356" text-anchor="middle">原始問題</text>
+
+  <path class="arrow" d="M215 330 H275"/>
+
+  <rect class="card blue" x="275" y="235" width="220" height="190" rx="18"/>
+  <text class="label" x="385" y="280" text-anchor="middle">LLM 拆解</text>
+  <text class="small" x="385" y="312" text-anchor="middle">拆成 3 個問法</text>
+  <rect class="chip" x="315" y="338" width="140" height="32" rx="16"/>
+  <text class="tiny" x="385" y="359" text-anchor="middle">問法 1</text>
+  <rect class="chip" x="315" y="376" width="140" height="32" rx="16"/>
+  <text class="tiny" x="385" y="397" text-anchor="middle">問法 2</text>
+  <rect class="chip" x="315" y="414" width="140" height="32" rx="16"/>
+  <text class="tiny" x="385" y="435" text-anchor="middle">問法 3</text>
+
+  <path class="arrow" d="M495 330 H555"/>
+
+  <rect class="card green" x="555" y="165" width="310" height="330" rx="18"/>
+  <text class="label" x="710" y="208" text-anchor="middle">Retriever 多次檢索</text>
+  <text class="small" x="710" y="240" text-anchor="middle">Hybrid Search = 向量 + 關鍵字</text>
+
+  <rect class="chip" x="590" y="280" width="240" height="44" rx="14"/>
+  <text class="tiny" x="710" y="307" text-anchor="middle">問法 1 → A、B、C</text>
+  <rect class="chip" x="590" y="340" width="240" height="44" rx="14"/>
+  <text class="tiny" x="710" y="367" text-anchor="middle">問法 2 → A、D、E</text>
+  <rect class="chip" x="590" y="400" width="240" height="44" rx="14"/>
+  <text class="tiny" x="710" y="427" text-anchor="middle">問法 3 → A、B、F</text>
+
+  <text class="small" x="710" y="472" text-anchor="middle">共得到 9 個候選答案</text>
+
+  <path class="arrow" d="M865 330 H925"/>
+
+  <rect class="card" x="925" y="205" width="210" height="250" rx="18"/>
+  <text class="label" x="1030" y="250" text-anchor="middle">9 個候選</text>
+
+  <g transform="translate(970 290)">
+    <rect class="a" x="0" y="0" width="42" height="36" rx="9"/>
+    <rect class="b" x="54" y="0" width="42" height="36" rx="9"/>
+    <rect class="chip" x="108" y="0" width="42" height="36" rx="9"/>
+    <rect class="a" x="0" y="50" width="42" height="36" rx="9"/>
+    <rect class="chip" x="54" y="50" width="42" height="36" rx="9"/>
+    <rect class="chip" x="108" y="50" width="42" height="36" rx="9"/>
+    <rect class="a" x="0" y="100" width="42" height="36" rx="9"/>
+    <rect class="b" x="54" y="100" width="42" height="36" rx="9"/>
+    <rect class="low" x="108" y="100" width="42" height="36" rx="9"/>
+    <text class="mini" x="21" y="24" text-anchor="middle">A</text>
+    <text class="mini" x="75" y="24" text-anchor="middle">B</text>
+    <text class="mini" x="129" y="24" text-anchor="middle">C</text>
+    <text class="mini" x="21" y="74" text-anchor="middle">A</text>
+    <text class="mini" x="75" y="74" text-anchor="middle">D</text>
+    <text class="mini" x="129" y="74" text-anchor="middle">E</text>
+    <text class="mini" x="21" y="124" text-anchor="middle">A</text>
+    <text class="mini" x="75" y="124" text-anchor="middle">B</text>
+    <text class="mini" x="129" y="124" text-anchor="middle">F</text>
+  </g>
+
+  <path class="arrow" d="M1135 330 H1195"/>
+
+  <rect class="card orange" x="1195" y="190" width="250" height="280" rx="18"/>
+  <text class="label" x="1320" y="236" text-anchor="middle">RRF 融合排序</text>
+  <text class="tiny" x="1320" y="270" text-anchor="middle">出現越多次 + 排名越前</text>
+  <text class="tiny" x="1320" y="296" text-anchor="middle">分數越高</text>
+
+  <rect class="a" x="1240" y="325" width="160" height="34" rx="17"/>
+  <text class="tiny" x="1320" y="347" text-anchor="middle">A：3 次，皆前面</text>
+  <rect class="b" x="1240" y="368" width="160" height="34" rx="17"/>
+  <text class="tiny" x="1320" y="390" text-anchor="middle">B：2 次，排名前</text>
+  <rect class="low" x="1240" y="411" width="160" height="34" rx="17"/>
+  <text class="tiny" x="1320" y="433" text-anchor="middle">F：1 次，較後面</text>
+
+  <path class="thin" d="M1320 470 V560 H1085"/>
+
+  <rect class="card purple" x="820" y="545" width="265" height="110" rx="18"/>
+  <text class="label" x="952" y="590" text-anchor="middle">選出 Top 3</text>
+  <text class="small" x="952" y="624" text-anchor="middle">A、B、D 給 LLM 參考</text>
+
+  <path class="arrow" d="M820 600 H725 V505"/>
+
+  <rect class="card mint" x="575" y="485" width="250" height="115" rx="18"/>
+  <text class="label" x="700" y="532" text-anchor="middle">LLM 生成回答</text>
+  <text class="small" x="700" y="566" text-anchor="middle">根據 Top 3 作答</text>
+</svg>

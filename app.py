@@ -187,6 +187,7 @@ def ask():
         "notebook_id": notebook_id,
         "question": question,
         "answer": answer,
+        "sources": sources,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
     append_jsonl(app.config["NOTEBOOK_HISTORY_LOG"], notebook_history_log_lock, record)

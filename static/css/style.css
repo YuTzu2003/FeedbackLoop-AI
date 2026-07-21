@@ -102,7 +102,7 @@ body {
 
 .app-shell {
     display: grid;
-    grid-template-columns: 320px 1fr;
+    grid-template-columns: 380px 1fr;
     height: calc(100vh - 68px);
     overflow: hidden
 }
@@ -991,11 +991,10 @@ body {
 
 .notebook-item span {
     display: block;
-    overflow: hidden;
-    font-size: 12px;
+    font-size: 13px;
     line-height: 1.5;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    word-break: break-word;
+    white-space: normal;
 }
 
 .notebook-item small {

@@ -52,17 +52,30 @@ urlForm.addEventListener("submit", (event) => { event.preventDefault(); uploadUr
 function sendCurrentQuestion() { const question = questionInput.value.trim(); if (question && activeNotebookId && !askButton.disabled) ask(question); }
 
 function renderNotebooks() {
-  notebookList.innerHTML = notebooks.length ? notebooks.map((notebook) => 
-    `<div class="notebook-item-wrapper ${notebook.id === activeNotebookId ? "active" : ""}">
+  notebookList.innerHTML = notebooks.length ? notebooks.map((notebook) => {
+    let typeStr = notebook.source_type || 'FILE';
+    if (typeStr === 'file' || typeStr === 'FILE') {
+      const parts = notebook.name.split('.');
+      if (parts.length > 1) typeStr = parts.pop();
+    }
+    typeStr = typeStr.toUpperCase();
+    let colorClass = 'bg-secondary text-secondary';
+    if (typeStr === 'WEB') colorClass = 'bg-primary text-primary';
+    else if (typeStr === 'PDF') colorClass = 'bg-danger text-danger';
+    else if (['XLSX', 'XLS', 'CSV'].includes(typeStr)) colorClass = 'bg-success text-success';
+    else if (['DOCX', 'TXT'].includes(typeStr)) colorClass = 'bg-info text-dark';
+    
+    const badge = `<span class="badge rounded-pill bg-opacity-25 ${colorClass}" style="font-size: 9px; padding: 2px 5px; font-weight: 600; vertical-align: middle;">${escapeHtml(typeStr)}</span>`;
+    return `<div class="notebook-item-wrapper ${notebook.id === activeNotebookId ? "active" : ""}">
       <button type="button" class="notebook-item" data-notebook-id="${notebook.id}">
-        <span>${escapeHtml(notebook.name)}</span>
-        <small>${new Date(notebook.created_at).toLocaleDateString("zh-TW")}</small>
+        <span style="margin-bottom: 5px;">${escapeHtml(notebook.name)}</span>
+        <div>${badge}</div>
       </button>
       <button type="button" class="delete-notebook" data-delete-id="${notebook.id}" title="刪除筆記本">
         <i class="bi bi-trash"></i>
       </button>
-    </div>`
-  ).join("") : "<p>尚未建立筆記本。</p>";
+    </div>`;
+  }).join("") : "<p>尚未建立筆記本。</p>";
 }
 
 async function loadNotebooks() {
@@ -96,7 +109,7 @@ async function loadNotebookHistory() {
 }
 
 function renderHistoryItem(item) {
-  return `<div class="message user">${escapeHtml(item.question)}</div>${answerMessage(item.answer, item.question, item.id)}`;
+  return `<div class="message user">${escapeHtml(item.question)}</div>${answerMessage(item.answer, item.question, item.id, item.sources)}`;
 }
 
 async function uploadFile() {
