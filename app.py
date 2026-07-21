@@ -11,12 +11,14 @@ from services.rag import (
     RagServiceError,
     answer_from_chunks,
     answer_from_history,
+    delete_document,
     ingest_web_url,
     retrieve_chunks,
     weaviate_status,
 )
 from services.storage import (
     append_jsonl,
+    delete_notebook_records,
     get_notebook,
     notebook_history,
     read_jsonl,
@@ -78,6 +80,31 @@ def list_notebook_history(notebook_id: str):
     return jsonify(items=list(reversed(notebook_history(app.config["NOTEBOOK_HISTORY_LOG"], notebook_id))))
 
 
+@app.delete("/api/notebooks/<notebook_id>")
+def delete_notebook(notebook_id: str):
+    notebook = current_notebook(notebook_id)
+    if not notebook:
+        return jsonify(error="找不到此筆記本。"), 404
+    
+    try:
+        delete_document(notebook_id, settings)
+    except RagServiceError as e:
+        app.logger.warning(f"Failed to delete document from Weaviate: {e}")
+        
+    delete_notebook_records(app.config["NOTEBOOK_LOG"], app.config["NOTEBOOK_HISTORY_LOG"], notebook_id, notebook_log_lock, notebook_history_log_lock)
+    
+    if notebook.get("stored_filename"):
+        file_path = Path(app.config["UPLOAD_FOLDER"]) / notebook["stored_filename"]
+        if file_path.exists():
+            try:
+                file_path.unlink()
+            except Exception as e:
+                app.logger.warning(f"Failed to delete file {file_path}: {e}")
+                
+    return jsonify(status="deleted")
+
+
+
 @app.get("/api/weaviate/status")
 def check_weaviate_status():
     try:
@@ -134,8 +161,8 @@ def ask():
             answer = answer_from_chunks(question, chunks, settings)
             sources = [{key: item[key] for key in ("title", "url", "chunk_index", "score")} for item in chunks]
         else:
-            messages = [{"role": "system", "content": "Answer clearly and concisely in Traditional Chinese."}]
-            for item in reversed(notebook_history(app.config["NOTEBOOK_HISTORY_LOG"], notebook_id)[:5]):
+            messages = [{"role": "system", "content": "你是一個樂於助人的 AI 助手。請始終以繁體中文清晰、簡明地回答問題，絕對不可以回傳空白或無意義的內容。"}]
+            for item in reversed(notebook_history(app.config["NOTEBOOK_HISTORY_LOG"], notebook_id)[:3]):
                 messages.extend([{"role": "user", "content": item["question"]}, {"role": "assistant", "content": item["answer"]}])
             messages.append({"role": "user", "content": question})
             answer = answer_from_history(messages, settings)

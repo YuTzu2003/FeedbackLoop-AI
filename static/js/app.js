@@ -17,7 +17,32 @@ const copyIcon = '<i class="bi bi-copy" aria-hidden="true"></i>';
 fileInput.addEventListener("change", uploadFile);
 document.querySelector("#questionForm").addEventListener("submit", (event) => { event.preventDefault(); sendCurrentQuestion(); });
 questionInput.addEventListener("keydown", (event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); sendCurrentQuestion(); } });
-notebookList.addEventListener("click", (event) => { const button = event.target.closest("[data-notebook-id]"); if (button) selectNotebook(button.dataset.notebookId); });
+notebookList.addEventListener("click", async (event) => { 
+  const deleteBtn = event.target.closest("[data-delete-id]");
+  if (deleteBtn) {
+    event.stopPropagation();
+    if (confirm("確定要刪除這份筆記本及其所有歷史紀錄嗎？")) {
+      const id = deleteBtn.dataset.deleteId;
+      const response = await fetch(`/api/notebooks/${id}`, { method: "DELETE" });
+      if (response.ok) {
+        if (activeNotebookId === id) {
+          activeNotebookId = null;
+          activeNotebook.textContent = "請選擇或建立筆記本";
+          readyState.textContent = "等待建立";
+          readyState.classList.remove("ready");
+          conversation.innerHTML = "";
+          questionInput.disabled = askButton.disabled = true;
+        }
+        await loadNotebooks();
+      } else {
+        alert("刪除失敗");
+      }
+    }
+    return;
+  }
+  const button = event.target.closest("[data-notebook-id]"); 
+  if (button) selectNotebook(button.dataset.notebookId); 
+});
 showUrlBtn.addEventListener("click", () => {
   urlForm.style.display = urlForm.style.display === "none" ? "flex" : "none";
   if (urlForm.style.display === "flex") urlInput.focus();
@@ -27,7 +52,17 @@ urlForm.addEventListener("submit", (event) => { event.preventDefault(); uploadUr
 function sendCurrentQuestion() { const question = questionInput.value.trim(); if (question && activeNotebookId && !askButton.disabled) ask(question); }
 
 function renderNotebooks() {
-  notebookList.innerHTML = notebooks.length ? notebooks.map((notebook) => `<button type="button" class="notebook-item ${notebook.id === activeNotebookId ? "active" : ""}" data-notebook-id="${notebook.id}"><span>${escapeHtml(notebook.name)}</span><small>${new Date(notebook.created_at).toLocaleDateString("zh-TW")}</small></button>`).join("") : "<p>尚未建立筆記本。</p>";
+  notebookList.innerHTML = notebooks.length ? notebooks.map((notebook) => 
+    `<div class="notebook-item-wrapper ${notebook.id === activeNotebookId ? "active" : ""}">
+      <button type="button" class="notebook-item" data-notebook-id="${notebook.id}">
+        <span>${escapeHtml(notebook.name)}</span>
+        <small>${new Date(notebook.created_at).toLocaleDateString("zh-TW")}</small>
+      </button>
+      <button type="button" class="delete-notebook" data-delete-id="${notebook.id}" title="刪除筆記本">
+        <i class="bi bi-trash"></i>
+      </button>
+    </div>`
+  ).join("") : "<p>尚未建立筆記本。</p>";
 }
 
 async function loadNotebooks() {

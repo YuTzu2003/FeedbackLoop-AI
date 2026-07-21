@@ -103,19 +103,18 @@ def chunk_text(content: str) -> list[str]:
 
 
 def embedding(text: str, settings: Settings) -> list[float]:
+    client = openai.OpenAI(base_url=settings.embedding_base_url, api_key="EMPTY", timeout=settings.embedding_timeout)
     try:
-        response = requests.post(
-            f"{settings.ollama_base_url}/api/embeddings",
-            json={"model": settings.embedding_model, "prompt": text},
-            timeout=settings.embedding_timeout,
+        response = client.embeddings.create(
+            model=settings.embedding_model,
+            input=text,
         )
-        response.raise_for_status()
-    except requests.RequestException as error:
+        vector = response.data[0].embedding
+        if not isinstance(vector, list) or not vector:
+            raise RagServiceError("Embedding 服務沒有回傳向量。", 503)
+        return vector
+    except Exception as error:
         raise RagServiceError("Embedding 服務目前無法使用。", 503) from error
-    vector = response.json().get("embedding")
-    if not isinstance(vector, list) or not vector:
-        raise RagServiceError("Embedding 服務沒有回傳向量。", 503)
-    return vector
 
 
 def rag_collection(client):
@@ -184,19 +183,23 @@ def retrieve_chunks(question: str, document_id: str, settings: Settings) -> list
 def answer_from_chunks(question: str, chunks: list[dict], settings: Settings) -> str:
     contexts = "\n\n".join(f"[{item['title']} | {item['url']}]\n{item['content']}" for item in chunks)
     prompt = (
-        "請只根據下列來源，以繁體中文清楚回答問題。"
-        "若來源不足以回答，請明確說明。\n\n"
+        "請根據下列來源，以繁體中文清楚回答問題。\n"
+        "若來源內容不足以完整回答，請務必明確回覆：「根據目前提供的資料，我無法回答這個問題。」，絕對不可以回傳空白。\n\n"
         f"問題：{question}\n\n來源：\n{contexts}"
     )
+    client = openai.OpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key, timeout=settings.llm_timeout)
     try:
-        response = requests.post(
-            f"{settings.ollama_base_url}/api/generate",
-            json={"model": settings.llm_model, "prompt": prompt, "stream": False},
-            timeout=settings.llm_timeout,
+        response = client.chat.completions.create(
+            model=settings.llm_model,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=settings.llm_max_tokens,
+            temperature=settings.llm_temperature,
         )
-        response.raise_for_status()
-        return response.json()["response"].strip()
-    except (requests.RequestException, KeyError) as error:
+        content = response.choices[0].message.content
+        return content.strip()
+    except openai.APITimeoutError as error:
+        raise RagServiceError("模型回應逾時，請稍後再試。", 504) from error
+    except Exception as error:
         raise RagServiceError("模型目前無法產生回答。", 503) from error
 
 
@@ -209,8 +212,21 @@ def answer_from_history(messages: list[dict], settings: Settings) -> str:
             max_tokens=settings.llm_max_tokens,
             temperature=settings.llm_temperature,
         )
-        return response.choices[0].message.content.strip()
+        content = response.choices[0].message.content
+        return content.strip()
     except openai.APITimeoutError as error:
         raise RagServiceError("模型回應逾時，請稍後再試。", 504) from error
     except Exception as error:
         raise RagServiceError("模型目前無法回應，請稍後再試。", 503) from error
+
+
+def delete_document(document_id: str, settings: Settings) -> None:
+    client = weaviate_client(settings)
+    try:
+        if client.collections.exists(RAG_COLLECTION):
+            collection = client.collections.get(RAG_COLLECTION)
+            collection.data.delete_many(Filter.by_property("document_id").equal(document_id))
+    except Exception as error:
+        raise RagServiceError("無法從 Weaviate 刪除內容。", 503) from error
+    finally:
+        client.close()

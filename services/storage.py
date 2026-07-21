@@ -79,3 +79,29 @@ def save_feedback(feedback_log: Path, lock: Lock, payload: dict) -> None:
         feedback_log.parent.mkdir(parents=True, exist_ok=True)
         with feedback_log.open("a", encoding="utf-8") as log:
             log.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+def delete_notebook_records(notebook_log: Path, history_log: Path, notebook_id: str, lock_notebook: Lock, lock_history: Lock) -> None:
+    with lock_notebook:
+        if notebook_log.exists():
+            records = []
+            for line in notebook_log.read_text(encoding="utf-8").splitlines():
+                try:
+                    record = json.loads(line)
+                    if record.get("id") != notebook_id:
+                        records.append(line)
+                except json.JSONDecodeError:
+                    continue
+            notebook_log.write_text("\n".join(records) + ("\n" if records else ""), encoding="utf-8")
+    
+    with lock_history:
+        if history_log.exists():
+            records = []
+            for line in history_log.read_text(encoding="utf-8").splitlines():
+                try:
+                    record = json.loads(line)
+                    if record.get("notebook_id") != notebook_id:
+                        records.append(line)
+                except json.JSONDecodeError:
+                    continue
+            history_log.write_text("\n".join(records) + ("\n" if records else ""), encoding="utf-8")
