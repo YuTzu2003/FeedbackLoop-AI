@@ -8,6 +8,7 @@ dependencies = [
     "beautifulsoup4>=4.12",
     "flask>=3.1.0",
     "openai>=2.45.0",
+    "pymupdf>=1.28.0",
     "python-dotenv>=1.2.2",
     "requests>=2.32",
     "weaviate-client>=4.22.0",

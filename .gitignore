@@ -8,6 +8,7 @@ uploads/
 .agents/
 *.egg-info
 *.jsonl
+*.json
 
 # Virtual environments
 .venv

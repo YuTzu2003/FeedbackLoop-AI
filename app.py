@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template, request
 from pipeline.retrieve_answer import answer_from_chunks, answer_from_history, retrieve_chunks
 from pipeline.load_url import ingest_web_url
+from pipeline.load_pdf import ingest_pdf
 from services.config import load_settings
 from services.api import load_llm_settings, get_system_prompt
 from services.vectordb import RagServiceError, delete_document, weaviate_status
@@ -24,6 +25,7 @@ app.config["FEEDBACK_LOG"] = HISTORY_DIR / "feedbacks.jsonl"
 app.config["NOTEBOOK_LOG"] = HISTORY_DIR / "notebooks.jsonl"
 app.config["NOTEBOOK_HISTORY_LOG"] = HISTORY_DIR / "notebook_history.jsonl"
 app.config["UPLOAD_FOLDER"] = BASE_DIR / "uploads"
+app.config["PDF_CHUNK_REPORT_DIR"] = BASE_DIR / "tmp" / "pdf_chunks"
 feedback_log_lock = Lock()
 notebook_log_lock = Lock()
 notebook_history_log_lock = Lock()
@@ -109,8 +111,26 @@ def upload():
         notebook = save_upload(file, Path(app.config["UPLOAD_FOLDER"]))
     except ValueError as error:
         return jsonify(error=str(error)), 400
+    if Path(notebook["stored_filename"]).suffix.lower() == ".pdf":
+        try:
+            notebook.update(
+                ingest_pdf(
+                    Path(app.config["UPLOAD_FOLDER"]) / notebook["stored_filename"],
+                    document_id=notebook["id"],
+                    filename=notebook["name"],
+                    settings=settings,
+                    report_dir=Path(app.config["PDF_CHUNK_REPORT_DIR"]),
+                )
+            )
+        except RagServiceError as error:
+            try:
+                delete_document(notebook["id"], settings)
+            except RagServiceError:
+                app.logger.exception("Failed to clean up PDF vectors after indexing failure")
+            (Path(app.config["UPLOAD_FOLDER"]) / notebook["stored_filename"]).unlink(missing_ok=True)
+            return jsonify(error=str(error)), error.status_code
     append_jsonl(app.config["NOTEBOOK_LOG"], notebook_log_lock, notebook)
-    return jsonify(notebook_id=notebook["id"], filename=notebook["name"], size=notebook["size"])
+    return jsonify(notebook_id=notebook["id"], filename=notebook["name"], size=notebook["size"], chunk_count=notebook.get("chunk_count"))
 
 
 @app.post("/api/upload_url")
@@ -140,12 +160,18 @@ def ask():
     if not notebook:
         return jsonify(error="找不到此筆記本。"), 404
     try:
-        if notebook.get("source_type") == "web":
+        if notebook.get("source_type") in {"web", "pdf"}:
             chunks = retrieve_chunks(question, notebook_id, settings)
             if not chunks:
                 return jsonify(error="找不到此網址來源的相關內容。"), 404
             answer = answer_from_chunks(question, chunks, llm_settings)
-            sources = [{key: item[key] for key in ("title", "url", "chunk_index", "score")} for item in chunks]
+            sources = [
+                {
+                    key: item.get(key)
+                    for key in ("source_type", "title", "url", "page_number", "chunk_index", "score")
+                }
+                for item in chunks
+            ]
         else:
             messages = [get_system_prompt()]
             for item in reversed(notebook_history(app.config["NOTEBOOK_HISTORY_LOG"], notebook_id)[:3]):

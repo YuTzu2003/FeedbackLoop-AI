@@ -7,7 +7,8 @@ from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 import app
-from services.llm import load_llm_settings
+from services.api import load_llm_settings
+from pipeline.load_pdf import write_pdf_chunk_report
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -20,11 +21,13 @@ class WeaviateConnectionTests(unittest.TestCase):
         self.original_notebook_log = app.app.config["NOTEBOOK_LOG"]
         self.original_notebook_history_log = app.app.config["NOTEBOOK_HISTORY_LOG"]
         self.original_upload_folder = app.app.config["UPLOAD_FOLDER"]
+        self.original_pdf_chunk_report_dir = app.app.config["PDF_CHUNK_REPORT_DIR"]
         app.app.config.update(TESTING=True)
         app.app.config["FEEDBACK_LOG"] = Path(self.temp_dir.name) / "feedbacks.jsonl"
         app.app.config["NOTEBOOK_LOG"] = Path(self.temp_dir.name) / "notebooks.jsonl"
         app.app.config["NOTEBOOK_HISTORY_LOG"] = Path(self.temp_dir.name) / "notebook_history.jsonl"
         app.app.config["UPLOAD_FOLDER"] = Path(self.temp_dir.name) / "uploads"
+        app.app.config["PDF_CHUNK_REPORT_DIR"] = Path(self.temp_dir.name) / "pdf_chunks"
         self.client = app.app.test_client()
 
     def tearDown(self):
@@ -32,6 +35,7 @@ class WeaviateConnectionTests(unittest.TestCase):
         app.app.config["NOTEBOOK_LOG"] = self.original_notebook_log
         app.app.config["NOTEBOOK_HISTORY_LOG"] = self.original_notebook_history_log
         app.app.config["UPLOAD_FOLDER"] = self.original_upload_folder
+        app.app.config["PDF_CHUNK_REPORT_DIR"] = self.original_pdf_chunk_report_dir
         self.temp_dir.cleanup()
 
     @patch("app.weaviate_status", return_value={"ready": True, "live": True})
@@ -82,6 +86,29 @@ class WeaviateConnectionTests(unittest.TestCase):
         self.assertEqual(notebook["name"], "report.csv")
         self.assertTrue((app.app.config["UPLOAD_FOLDER"] / notebook["stored_filename"]).exists())
 
+    @patch("app.ingest_pdf", return_value={"source_type": "pdf", "chunk_count": 2, "processed_pages": 1, "ocr_pages": 0})
+    def test_pdf_upload_indexes_chunks_before_creating_notebook(self, ingest):
+        response = self.client.post("/api/upload", data={"file": (BytesIO(b"%PDF-1.4"), "report.pdf")})
+
+        self.assertEqual(response.status_code, 200)
+        notebook = app.read_jsonl(app.app.config["NOTEBOOK_LOG"], "notebook")[0]
+        self.assertEqual(notebook["source_type"], "pdf")
+        self.assertEqual(response.json["chunk_count"], 2)
+        ingest.assert_called_once_with(
+            app.app.config["UPLOAD_FOLDER"] / notebook["stored_filename"],
+            document_id=notebook["id"],
+            filename="report.pdf",
+            settings=app.settings,
+            report_dir=app.app.config["PDF_CHUNK_REPORT_DIR"],
+        )
+
+    def test_pdf_chunk_report_is_saved_as_inspectable_json(self):
+        report = {"source": "report.pdf", "chunks": [{"chunk_id": "chunk_00001", "content": "Example text"}]}
+        report_path = write_pdf_chunk_report(report, Path(self.temp_dir.name) / "pdf_chunks", "pdf-1")
+
+        self.assertEqual(report_path.name, "pdf-1.json")
+        self.assertEqual(json.loads(report_path.read_text(encoding="utf-8")), report)
+
     @patch("app.ingest_web_url", return_value={"id": "web-1", "name": "Example page", "source_type": "web", "url": "https://example.com", "chunk_count": 2})
     def test_url_upload_creates_a_web_notebook_after_chunking(self, ingest):
         response = self.client.post("/api/upload_url", json={"url": "https://example.com"})
@@ -112,6 +139,21 @@ class WeaviateConnectionTests(unittest.TestCase):
         retrieve.assert_called_once_with("What is the source?", "web-1", app.settings)
         answer.assert_called_once_with("What is the source?", retrieve.return_value, app.llm_settings)
         self.assertEqual(response.json["sources"][0]["url"], "https://example.com")
+
+    @patch("app.answer_from_chunks", return_value="PDF answer")
+    @patch("app.retrieve_chunks", return_value=[{"source_type": "pdf", "title": "report.pdf", "page_number": 2, "chunk_index": 1, "score": 0.91, "content": "source text"}])
+    def test_pdf_notebook_question_uses_document_scoped_retrieval(self, retrieve, answer):
+        app.app.config["NOTEBOOK_LOG"].write_text(
+            json.dumps({"id": "pdf-1", "name": "report.pdf", "source_type": "pdf", "created_at": "2026-01-01T00:00:00+00:00"}) + "\n",
+            encoding="utf-8",
+        )
+
+        response = self.client.post("/api/ask", json={"question": "What is the source?", "notebook_id": "pdf-1"})
+
+        self.assertEqual(response.status_code, 200)
+        retrieve.assert_called_once_with("What is the source?", "pdf-1", app.settings)
+        answer.assert_called_once_with("What is the source?", retrieve.return_value, app.llm_settings)
+        self.assertEqual(response.json["sources"][0]["page_number"], 2)
 
     @patch("app.answer_from_history", return_value="The revenue increased.")
     def test_notebook_history_is_sent_to_llm_and_new_answer_is_saved(self, answer):

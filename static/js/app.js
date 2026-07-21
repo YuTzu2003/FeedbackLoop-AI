@@ -184,6 +184,11 @@ function escapeHtml(value) {
 }
 function escapeAttribute(value) { return escapeHtml(value).replace(/"/g, "&quot;"); }
 function formatSource(source) {
+  if (source.source_type === "pdf") {
+    const page = source.page_number ? `第 ${source.page_number} 頁` : "頁碼不明";
+    const score = source.score == null ? "" : ` · ${(source.score * 100).toFixed(0)}%`;
+    return escapeHtml(`${source.title} · ${page}${score}`);
+  }
   const label = `${source.title} · chunk ${source.chunk_index} · ${(source.score * 100).toFixed(0)}%`;
   return `<a href="${escapeAttribute(source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
 }

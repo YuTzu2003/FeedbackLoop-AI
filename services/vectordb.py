@@ -14,6 +14,7 @@ RAG_PROPERTIES = [
     Property(name="source_type", data_type=DataType.TEXT),
     Property(name="url", data_type=DataType.TEXT),
     Property(name="title", data_type=DataType.TEXT),
+    Property(name="page_number", data_type=DataType.INT),
     Property(name="chunk_index", data_type=DataType.INT),
     Property(name="content", data_type=DataType.TEXT),
     Property(name="created_at", data_type=DataType.DATE),]
