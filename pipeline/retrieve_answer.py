@@ -35,17 +35,10 @@ def reciprocal_rank_fusion(result_groups: list[list[dict]], k: int = 60) -> list
             documents[document_id] = document
     return [
         {**documents[document_id], "rrf_score": score}
-        for document_id, score in sorted(scores.items(), key=lambda item: item[1], reverse=True)
-    ]
+        for document_id, score in sorted(scores.items(), key=lambda item: item[1], reverse=True)]
 
 
-def retrieve_chunks(
-    question: str,
-    document_id: str,
-    settings: Settings,
-    llm_settings: LLMSettings,
-    search_mode: str,
-) -> list[dict]:
+def retrieve_chunks(question: str,document_id: str,settings: Settings,llm_settings: LLMSettings,search_mode: str,) -> list[dict]:
     queries = generate_three_queries(question, llm_settings)
     client = weaviate_client(settings)
     try:

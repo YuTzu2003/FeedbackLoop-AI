@@ -7,16 +7,8 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 import fitz
-
 from services.config import Settings
-from services.vectordb import (
-    CHUNK_OVERLAP,
-    CHUNK_SIZE,
-    RagServiceError,
-    embedding,
-    rag_collection,
-    weaviate_client,
-)
+from services.vectordb import (CHUNK_OVERLAP,CHUNK_SIZE,RagServiceError,embedding,rag_collection,weaviate_client,)
 
 _CID = re.compile(r"\(cid\s*:\s*\d+\s*\)", re.IGNORECASE)
 
@@ -156,25 +148,9 @@ def write_pdf_chunk_report(report: dict, report_dir: Path, document_id: str) -> 
     return report_path
 
 
-def ingest_pdf(
-    pdf_path: Path,
-    *,
-    document_id: str,
-    filename: str,
-    settings: Settings,
-    report_dir: Path | None = None,
-) -> dict:
-    """Parse a PDF and store its chunks with application-provided vectors."""
+def ingest_pdf(pdf_path: Path,*,document_id: str,filename: str,settings: Settings,report_dir: Path | None = None,) -> dict:
     try:
-        report = parse_pdf(
-            pdf_path,
-            max_pages=None,
-            use_ocr=True,
-            force_ocr=False,
-            language="chi_tra+eng",
-            chunk_size=CHUNK_SIZE,
-            overlap=CHUNK_OVERLAP,
-        )
+        report = parse_pdf(pdf_path,max_pages=None,use_ocr=True,force_ocr=False,language="chi_tra+eng",chunk_size=CHUNK_SIZE,overlap=CHUNK_OVERLAP,)
     except (OSError, RuntimeError) as error:
         raise RagServiceError("PDF parsing failed.", 400) from error
 

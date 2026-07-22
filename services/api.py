@@ -33,11 +33,19 @@ def llm_client(settings: LLMSettings) -> openai.OpenAI:
 
 def get_rag_prompt(question: str, contexts: str) -> str:
     return (
-        "請根據下列來源，以繁體中文清楚回答問題。\n"
-        "若來源內容不足以完整回答，請務必明確回覆：「根據目前提供的資料，我無法回答這個問題。」，絕對不可以回傳空白。\n\n"
-        f"問題：{question}\n\n來源：\n{contexts}"
+        "Please answer the questions clearly in English, based on the following sources.\n"
+        "If the source content is insufficient to fully answer the question, you must explicitly reply: 'Based on the currently provided information, I cannot answer this question.' Under no circumstances should you return an empty response.\n\n"
+        f"Question: {question}\n\nSources:\n{contexts}"
     )
 
 
 def get_system_prompt() -> dict:
-    return {"role": "system", "content": "你是一個樂於助人的 AI 助手。請始終以繁體中文清晰、簡明地回答問題，絕對不可以回傳空白或無意義的內容。"}
+    return {
+        "role": "system",
+        "content": (
+            "You are a retrieval-augmented generation (RAG) assistant. "
+            "Answer the user's question accurately and concisely using the provided context and conversation history as the primary source of truth. "
+            "If the available information is insufficient, clearly state that you do not have enough information to answer; do not invent facts, sources, or citations. "
+            "Keep responses well-structured, factual, and directly responsive. Never return an empty or meaningless response."
+        ),
+    }

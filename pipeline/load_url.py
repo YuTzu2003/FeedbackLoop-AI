@@ -3,23 +3,12 @@ from ipaddress import ip_address
 from socket import gethostbyname
 from urllib.parse import urlparse
 from uuid import uuid4
-
 import requests
 from bs4 import BeautifulSoup
-
 from services.config import Settings
-from services.vectordb import (
-    CHUNK_OVERLAP,
-    CHUNK_SIZE,
-    RagServiceError,
-    embedding,
-    rag_collection,
-    weaviate_client,
-)
-
+from services.vectordb import (CHUNK_OVERLAP,CHUNK_SIZE,RagServiceError,embedding,rag_collection,weaviate_client,)
 
 def validate_public_url(url: str) -> str:
-    """驗證 URL 的合法性，並阻擋針對內網或保留 IP 的請求，防止 SSRF 攻擊"""
     parsed = urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise RagServiceError("網址必須是有效的 http 或 https URL。", 400)
@@ -33,7 +22,6 @@ def validate_public_url(url: str) -> str:
 
 
 def load_web_page(url: str) -> dict:
-    """讀取公開網頁，移除不必要的 HTML 標籤（如 script, nav, footer），並萃取出乾淨的純文字內容與標題"""
     validate_public_url(url)
     try:
         response = requests.get(url, timeout=15, headers={"User-Agent": "FeedbackLoop-AI/0.1"}, allow_redirects=False)
@@ -53,7 +41,6 @@ def load_web_page(url: str) -> dict:
 
 
 def chunk_text(content: str) -> list[str]:
-    """將長篇文字按照指定的大小 (CHUNK_SIZE) 與重疊長度 (CHUNK_OVERLAP) 切割成多個文字區塊"""
     text = " ".join(content.split())
     chunks, start = [], 0
     while start < len(text):
@@ -72,7 +59,6 @@ def chunk_text(content: str) -> list[str]:
 
 
 def ingest_web_url(url: str, settings: Settings) -> dict:
-    """整合流程：讀取網頁 -> 文字切塊 -> 將切塊轉換為向量 -> 寫入 Weaviate 向量資料庫"""
     page = load_web_page(url)
     document_id = uuid4().hex
     chunks = chunk_text(page["content"])
