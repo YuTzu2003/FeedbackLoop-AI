@@ -581,14 +581,15 @@ body {
 }
 
 .question-box select {
-    width: 108px;
-    margin: 0 0 7px;
-    padding: 5px 7px;
+    width: 95px;
+    height: 35px;
+    margin: 0;
+    padding: 0 7px;
     border: 1px solid var(--line);
-    border-radius: 7px;
+    border-radius: 9px;
     background: #f8fbf9;
     color: #3c4e47;
-    font: 11px 'DM Mono'
+    font: 13px 'Noto Sans TC';
 }
 
 .question-box select:disabled {
