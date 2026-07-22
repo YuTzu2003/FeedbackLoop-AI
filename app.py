@@ -3,6 +3,8 @@ from pathlib import Path
 from threading import Lock
 from uuid import uuid4
 from dotenv import load_dotenv
+import logging
+import sys
 from flask import Flask, jsonify, render_template, request
 from pipeline.retrieve_answer import answer_from_chunks, answer_from_history, retrieve_chunks
 from pipeline.load_url import ingest_web_url
@@ -29,6 +31,11 @@ app.config["PDF_CHUNK_REPORT_DIR"] = BASE_DIR / "tmp" / "pdf_chunks"
 feedback_log_lock = Lock()
 notebook_log_lock = Lock()
 notebook_history_log_lock = Lock()
+
+logging.basicConfig(level=logging.INFO,format='%(asctime)s | %(levelname)s | %(message)s',datefmt='%Y-%m-%d %H:%M:%S',handlers=[logging.StreamHandler(sys.stdout)])
+werkzeug_logger = logging.getLogger('werkzeug')
+werkzeug_logger.handlers = []
+werkzeug_logger.propagate = True
 
 
 def current_notebook(notebook_id: str) -> dict | None:
@@ -152,16 +159,19 @@ def ask():
     payload = request.json or {}
     question = payload.get("question", "").strip()
     notebook_id = payload.get("notebook_id", "").strip()
+    search_mode = str(payload.get("search_mode") or "near_vector").strip()
     if not question:
         return jsonify(error="請輸入問題。"), 400
     if not notebook_id:
         return jsonify(error="請選擇筆記本。"), 400
+    if search_mode not in {"hybrid", "near_vector"}:
+        return jsonify(error="Invalid search mode."), 400
     notebook = current_notebook(notebook_id)
     if not notebook:
         return jsonify(error="找不到此筆記本。"), 404
     try:
         if notebook.get("source_type") in {"web", "pdf"}:
-            chunks = retrieve_chunks(question, notebook_id, settings)
+            chunks = retrieve_chunks(question, notebook_id, settings, llm_settings, search_mode)
             if not chunks:
                 return jsonify(error="找不到此網址來源的相關內容。"), 404
             answer = answer_from_chunks(question, chunks, llm_settings)
@@ -206,4 +216,4 @@ def feedback():
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=True)

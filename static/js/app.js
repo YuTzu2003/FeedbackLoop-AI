@@ -1,6 +1,7 @@
 const fileInput = document.querySelector("#fileInput");
 const fileStatus = document.querySelector("#fileStatus");
 const questionInput = document.querySelector("#question");
+const searchMode = document.querySelector("#searchMode");
 const askButton = document.querySelector("#askButton");
 const conversation = document.querySelector("#conversation");
 const readyState = document.querySelector("#readyState");
@@ -31,7 +32,7 @@ notebookList.addEventListener("click", async (event) => {
           readyState.textContent = "等待建立";
           readyState.classList.remove("ready");
           conversation.innerHTML = "";
-          questionInput.disabled = askButton.disabled = true;
+          questionInput.disabled = searchMode.disabled = askButton.disabled = true;
         }
         await loadNotebooks();
       } else {
@@ -92,7 +93,7 @@ async function selectNotebook(notebookId) {
   activeNotebook.textContent = notebook.name;
   readyState.textContent = "筆記本已就緒";
   readyState.classList.add("ready");
-  questionInput.disabled = askButton.disabled = false;
+  questionInput.disabled = searchMode.disabled = askButton.disabled = false;
   renderNotebooks();
   await loadNotebookHistory();
   questionInput.focus();
@@ -145,7 +146,7 @@ async function ask(question) {
   conversation.scrollTop = conversation.scrollHeight;
   questionInput.value = "";
   askButton.disabled = true;
-  const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, notebook_id: activeNotebookId }) });
+  const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, notebook_id: activeNotebookId, search_mode: searchMode.value }) });
   const data = await response.json();
   conversation.querySelector(".loading")?.remove();
   askButton.disabled = false;

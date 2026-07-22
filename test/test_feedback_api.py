@@ -136,7 +136,7 @@ class WeaviateConnectionTests(unittest.TestCase):
         response = self.client.post("/api/ask", json={"question": "What is the source?", "notebook_id": "web-1"})
 
         self.assertEqual(response.status_code, 200)
-        retrieve.assert_called_once_with("What is the source?", "web-1", app.settings)
+        retrieve.assert_called_once_with("What is the source?", "web-1", app.settings, app.llm_settings, "near_vector")
         answer.assert_called_once_with("What is the source?", retrieve.return_value, app.llm_settings)
         self.assertEqual(response.json["sources"][0]["url"], "https://example.com")
 
@@ -148,10 +148,10 @@ class WeaviateConnectionTests(unittest.TestCase):
             encoding="utf-8",
         )
 
-        response = self.client.post("/api/ask", json={"question": "What is the source?", "notebook_id": "pdf-1"})
+        response = self.client.post("/api/ask", json={"question": "What is the source?", "notebook_id": "pdf-1", "search_mode": "hybrid"})
 
         self.assertEqual(response.status_code, 200)
-        retrieve.assert_called_once_with("What is the source?", "pdf-1", app.settings)
+        retrieve.assert_called_once_with("What is the source?", "pdf-1", app.settings, app.llm_settings, "hybrid")
         answer.assert_called_once_with("What is the source?", retrieve.return_value, app.llm_settings)
         self.assertEqual(response.json["sources"][0]["page_number"], 2)
 
@@ -182,6 +182,11 @@ class WeaviateConnectionTests(unittest.TestCase):
         response = self.client.post("/api/ask", json={"question": "Q", "notebook_id": "missing"})
         self.assertEqual(response.status_code, 404)
 
+    def test_question_rejects_an_invalid_search_mode(self):
+        response = self.client.post("/api/ask", json={"question": "Q", "notebook_id": "book-1", "search_mode": "invalid"})
+
+        self.assertEqual(response.status_code, 400)
+
     def test_homepage_exposes_the_configured_llm_model(self):
         response = self.client.get("/")
         self.assertEqual(response.status_code, 200)
@@ -201,6 +206,13 @@ class WeaviateConnectionTests(unittest.TestCase):
     def test_question_input_supports_enter_to_send(self):
         script = (PROJECT_ROOT / "static" / "js" / "app.js").read_text(encoding="utf-8")
         self.assertIn('event.key === "Enter" && !event.shiftKey', script)
+        self.assertIn('search_mode: searchMode.value', script)
+
+    def test_homepage_defaults_to_near_vector_search(self):
+        page = self.client.get("/").get_data(as_text=True)
+
+        self.assertIn('id="searchMode"', page)
+        self.assertIn('value="near_vector" selected', page)
 
     def test_answer_actions_use_an_accessible_copy_icon(self):
         script = (PROJECT_ROOT / "static" / "js" / "app.js").read_text(encoding="utf-8")
