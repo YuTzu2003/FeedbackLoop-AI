@@ -104,15 +104,15 @@
   <rect class="low" x="1240" y="411" width="160" height="34" rx="17"/>
   <text class="tiny" x="1320" y="433" text-anchor="middle">F：1 次，較後面</text>
 
-  <path class="thin" d="M1320 470 V560 H1085"/>
+  <path class="thin" d="M1320 470 V610 H1120"/>
 
-  <rect class="card purple" x="820" y="545" width="265" height="110" rx="18"/>
-  <text class="label" x="952" y="590" text-anchor="middle">選出 Top 3</text>
-  <text class="small" x="952" y="624" text-anchor="middle">A、B、D 給 LLM 參考</text>
+  <rect class="card purple" x="860" y="555" width="260" height="110" rx="18"/>
+  <text class="label" x="990" y="600" text-anchor="middle">選出 Top 3</text>
+  <text class="small" x="990" y="634" text-anchor="middle">A、B、D 給 LLM 參考</text>
 
-  <path class="arrow" d="M820 600 H725 V505"/>
+  <path class="arrow" d="M860 610 H760"/>
 
-  <rect class="card mint" x="575" y="485" width="250" height="115" rx="18"/>
-  <text class="label" x="700" y="532" text-anchor="middle">LLM 生成回答</text>
-  <text class="small" x="700" y="566" text-anchor="middle">根據 Top 3 作答</text>
+  <rect class="card mint" x="500" y="555" width="260" height="110" rx="18"/>
+  <text class="label" x="630" y="600" text-anchor="middle">LLM 生成回答</text>
+  <text class="small" x="630" y="634" text-anchor="middle">根據 Top 3 作答</text>
 </svg>
