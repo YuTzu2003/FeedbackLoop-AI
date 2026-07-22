@@ -580,6 +580,21 @@ body {
     color: #a1a5a2
 }
 
+.question-box select {
+    width: 108px;
+    margin: 0 0 7px;
+    padding: 5px 7px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: #f8fbf9;
+    color: #3c4e47;
+    font: 11px 'DM Mono'
+}
+
+.question-box select:disabled {
+    color: #9ba39f
+}
+
 .question-box button,
 .primary-button {
     display: grid;

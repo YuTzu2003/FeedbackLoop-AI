@@ -152,16 +152,19 @@ def ask():
     payload = request.json or {}
     question = payload.get("question", "").strip()
     notebook_id = payload.get("notebook_id", "").strip()
+    search_mode = str(payload.get("search_mode") or "near_vector").strip()
     if not question:
         return jsonify(error="請輸入問題。"), 400
     if not notebook_id:
         return jsonify(error="請選擇筆記本。"), 400
+    if search_mode not in {"hybrid", "near_vector"}:
+        return jsonify(error="Invalid search mode."), 400
     notebook = current_notebook(notebook_id)
     if not notebook:
         return jsonify(error="找不到此筆記本。"), 404
     try:
         if notebook.get("source_type") in {"web", "pdf"}:
-            chunks = retrieve_chunks(question, notebook_id, settings)
+            chunks = retrieve_chunks(question, notebook_id, settings, llm_settings, search_mode)
             if not chunks:
                 return jsonify(error="找不到此網址來源的相關內容。"), 404
             answer = answer_from_chunks(question, chunks, llm_settings)
