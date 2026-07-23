@@ -214,20 +214,6 @@ def ask():
     return jsonify(answer=answer, sources=sources, history_id=record["id"], notebook_id=notebook_id)
 
 
-<<<<<<< HEAD
-=======
-@app.post("/api/feedback")
-@login_required
-def feedback():
-    try:
-        save_feedback(app.config["FEEDBACK_LOG"], feedback_log_lock, request.json or {})
-    except ValueError as error:
-        return jsonify(error=str(error)), 400
-    except FileExistsError as error:
-        return jsonify(error=str(error)), 409
-    return jsonify(status="saved"), 201
-
->>>>>>> main
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
