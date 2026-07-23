@@ -1,9 +1,6 @@
 from dataclasses import dataclass
-
 import openai
-
 from services.config import required_env
-
 
 @dataclass(frozen=True)
 class LLMSettings:
@@ -14,14 +11,12 @@ class LLMSettings:
     max_tokens: int = 8192
     temperature: float = 0.7
 
-
 def load_llm_settings() -> LLMSettings:
     return LLMSettings(
         base_url=required_env("LLM_BASE_URL"),
         api_key=required_env("LLM_API_KEY"),
         model=required_env("LLM_MODEL"),
     )
-
 
 def llm_client(settings: LLMSettings) -> openai.OpenAI:
     return openai.OpenAI(
@@ -30,14 +25,12 @@ def llm_client(settings: LLMSettings) -> openai.OpenAI:
         timeout=settings.timeout,
     )
 
-
 def get_rag_prompt(question: str, contexts: str) -> str:
     return (
-        "Please answer the questions clearly in English, based on the following sources.\n"
+        "Please answer the questions clearly in respond to the question in the language the user used, based on the following sources.\n"
         "If the source content is insufficient to fully answer the question, you must explicitly reply: 'Based on the currently provided information, I cannot answer this question.' Under no circumstances should you return an empty response.\n\n"
         f"Question: {question}\n\nSources:\n{contexts}"
     )
-
 
 def get_system_prompt() -> dict:
     return {

@@ -1,8 +1,8 @@
 import json
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Lock
-from uuid import uuid4
 from werkzeug.datastructures import FileStorage
 from werkzeug.utils import secure_filename
 
@@ -27,22 +27,30 @@ def append_jsonl(log_path: Path | str, lock: Lock, record: dict) -> None:
         with log_path.open("a", encoding="utf-8") as log:
             log.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-def get_notebook(notebook_log: Path | str, notebook_id: str) -> dict | None:
-    return next((item for item in read_jsonl(Path(notebook_log), "notebook") if item.get("id") == notebook_id), None)
-
 def notebook_history(history_log: Path | str, notebook_id: str) -> list[dict]:
     return [item for item in read_jsonl(Path(history_log), "notebook history") if item.get("notebook_id") == notebook_id]
 
-def save_upload(file: FileStorage, upload_dir: Path | str) -> dict:
-    upload_dir = Path(upload_dir)
-    upload_dir.mkdir(parents=True, exist_ok=True)
+def notebook_data_dir(data_root: Path | str, user_id: str, notebook_id: str) -> Path:
+    root = Path(data_root).resolve()
+    notebook_dir = (root / str(user_id) / notebook_id).resolve()
+    if root not in notebook_dir.parents:
+        raise ValueError("Invalid notebook path.")
+    return notebook_dir
+
+
+def notebook_history_path(data_root: Path | str, user_id: str, notebook_id: str) -> Path:
+    return notebook_data_dir(data_root, user_id, notebook_id) / "history.jsonl"
+
+
+def save_upload(file: FileStorage, notebook_dir: Path | str, notebook_id: str) -> dict:
+    notebook_dir = Path(notebook_dir)
+    notebook_dir.mkdir(parents=True, exist_ok=True)
     original_filename = file.filename or ""
     if "." not in original_filename or original_filename.rsplit(".", 1)[1].lower() not in ALLOWED_EXTENSIONS:
         raise ValueError("只支援 CSV、Excel、PDF、TXT 與 DOCX 文件。")
-    notebook_id = uuid4().hex
     safe_filename = secure_filename(original_filename) or f"document{Path(original_filename).suffix.lower()}"
-    stored_filename = f"{notebook_id}_{safe_filename}"
-    file_path = upload_dir / stored_filename
+    stored_filename = safe_filename
+    file_path = notebook_dir / stored_filename
     file.save(file_path)
     return {
         "id": notebook_id,
@@ -76,29 +84,7 @@ def save_feedback(log_path: Path | str, lock: Lock, payload: dict) -> None:
             log.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
-def delete_notebook_records(notebook_log: Path | str, history_log: Path | str, notebook_id: str, lock_notebook: Lock, lock_history: Lock) -> None:
-    notebook_log = Path(notebook_log)
-    history_log = Path(history_log)
-    with lock_notebook:
-        if notebook_log.exists():
-            records = []
-            for line in notebook_log.read_text(encoding="utf-8").splitlines():
-                try:
-                    record = json.loads(line)
-                    if record.get("id") != notebook_id:
-                        records.append(line)
-                except json.JSONDecodeError:
-                    continue
-            notebook_log.write_text("\n".join(records) + ("\n" if records else ""), encoding="utf-8")
-    
-    with lock_history:
-        if history_log.exists():
-            records = []
-            for line in history_log.read_text(encoding="utf-8").splitlines():
-                try:
-                    record = json.loads(line)
-                    if record.get("notebook_id") != notebook_id:
-                        records.append(line)
-                except json.JSONDecodeError:
-                    continue
-            history_log.write_text("\n".join(records) + ("\n" if records else ""), encoding="utf-8")
+def delete_notebook_data(data_root: Path | str, user_id: str, notebook_id: str) -> None:
+    notebook_dir = notebook_data_dir(data_root, user_id, notebook_id)
+    if notebook_dir.exists():
+        shutil.rmtree(notebook_dir)

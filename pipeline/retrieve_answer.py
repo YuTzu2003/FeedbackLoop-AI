@@ -21,8 +21,8 @@ def generate_three_queries(question: str, llm_settings: LLMSettings) -> list[str
         content = response.choices[0].message.content or ""
         queries = [line.strip() for line in content.splitlines() if line.strip()]
         return queries[:3] or [question]
-    except openai.APITimeoutError as error:
-        raise RagServiceError("LLM request timed out", 504) from error
+    except openai.OpenAIError as error:
+        raise RagServiceError(f"LLM 服務連線失敗: {error}", 500) from error
 
 
 def reciprocal_rank_fusion(result_groups: list[list[dict]], k: int = 60) -> list[dict]:
@@ -86,8 +86,8 @@ def answer_from_chunks(question: str, chunks: list[dict], llm_settings: LLMSetti
         )
         content = response.choices[0].message.content
         return content.strip()
-    except openai.APITimeoutError as error:
-        raise RagServiceError("模型回應逾時，請稍後再試。", 504) from error
+    except openai.OpenAIError as error:
+        raise RagServiceError(f"模型回應失敗: {error}", 500) from error
 
 
 def answer_from_history(messages: list[dict], llm_settings: LLMSettings) -> str:
@@ -100,5 +100,5 @@ def answer_from_history(messages: list[dict], llm_settings: LLMSettings) -> str:
         )
         content = response.choices[0].message.content
         return content.strip()
-    except openai.APITimeoutError as error:
-        raise RagServiceError("模型回應逾時，請稍後再試。", 504) from error
+    except openai.OpenAIError as error:
+        raise RagServiceError(f"模型回應失敗: {error}", 500) from error
