@@ -5,7 +5,7 @@ from uuid import uuid4
 from dotenv import load_dotenv
 import logging
 import sys
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, session, redirect, url_for
 from pipeline.retrieve_answer import answer_from_chunks, answer_from_history, retrieve_chunks
 from pipeline.load_url import ingest_web_url
 from pipeline.load_pdf import ingest_pdf
@@ -13,21 +13,24 @@ from services.config import load_settings
 from services.api import load_llm_settings, get_system_prompt
 from services.vectordb import RagServiceError, delete_document, weaviate_status
 from services.storage import (append_jsonl,delete_notebook_records,get_notebook,notebook_history,read_jsonl,save_feedback,save_upload,)
+from services.db import get_conn
+import os
 
 load_dotenv()
-
 settings = load_settings()
 llm_settings = load_llm_settings()
+
 app = Flask(__name__)
+
 BASE_DIR = Path(__file__).resolve().parent
+HISTORY_DIR = f"{BASE_DIR}/tasks/historys"
+Path(HISTORY_DIR).mkdir(parents=True, exist_ok=True)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
-HISTORY_DIR = BASE_DIR / "tasks" / "historys"
-HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-app.config["FEEDBACK_LOG"] = HISTORY_DIR / "feedbacks.jsonl"
-app.config["NOTEBOOK_LOG"] = HISTORY_DIR / "notebooks.jsonl"
-app.config["NOTEBOOK_HISTORY_LOG"] = HISTORY_DIR / "notebook_history.jsonl"
-app.config["UPLOAD_FOLDER"] = BASE_DIR / "uploads"
-app.config["PDF_CHUNK_REPORT_DIR"] = BASE_DIR / "tmp" / "pdf_chunks"
+app.config["FEEDBACK_LOG"] = f"{HISTORY_DIR}/feedbacks.jsonl"
+app.config["NOTEBOOK_LOG"] = f"{HISTORY_DIR}/notebooks.jsonl"
+app.config["NOTEBOOK_HISTORY_LOG"] = f"{HISTORY_DIR}/notebook_history.jsonl"
+app.config["UPLOAD_FOLDER"] = f"{BASE_DIR}/uploads"
+app.config["PDF_CHUNK_REPORT_DIR"] = f"{BASE_DIR}/tmp/pdf_chunks"
 feedback_log_lock = Lock()
 notebook_log_lock = Lock()
 notebook_history_log_lock = Lock()
@@ -36,6 +39,10 @@ logging.basicConfig(level=logging.INFO,format='%(asctime)s | %(levelname)s | %(m
 werkzeug_logger = logging.getLogger('werkzeug')
 werkzeug_logger.handlers = []
 werkzeug_logger.propagate = True
+app.secret_key = os.environ.get("SECRET_KEY") or os.urandom(32)
+
+from services.auth import auth_bp, login_required, admin_required
+app.register_blueprint(auth_bp)
 
 
 def current_notebook(notebook_id: str) -> dict | None:
@@ -43,32 +50,38 @@ def current_notebook(notebook_id: str) -> dict | None:
 
 
 @app.get("/")
+@login_required
 def index():
     return render_template("index.html", llm_model=llm_settings.model)
 
 
 @app.get("/feedback")
 @app.get("/feedbacks")
+@login_required
 def feedback_page():
     return render_template("feedback.html")
 
 
 @app.get("/connection")
+@admin_required
 def connection_page():
     return render_template("connection.html")
 
 
 @app.get("/api/feedbacks")
+@login_required
 def list_feedbacks():
     return jsonify(items=read_jsonl(app.config["FEEDBACK_LOG"], "feedback"))
 
 
 @app.get("/api/notebooks")
+@login_required
 def list_notebooks():
     return jsonify(items=read_jsonl(app.config["NOTEBOOK_LOG"], "notebook"))
 
 
 @app.get("/api/notebooks/<notebook_id>/history")
+@login_required
 def list_notebook_history(notebook_id: str):
     if not current_notebook(notebook_id):
         return jsonify(error="找不到此筆記本。"), 404
@@ -76,6 +89,7 @@ def list_notebook_history(notebook_id: str):
 
 
 @app.delete("/api/notebooks/<notebook_id>")
+@login_required
 def delete_notebook(notebook_id: str):
     notebook = current_notebook(notebook_id)
     if not notebook:
@@ -101,6 +115,7 @@ def delete_notebook(notebook_id: str):
 
 
 @app.get("/api/weaviate/status")
+@login_required
 def check_weaviate_status():
     try:
         return jsonify(weaviate_status(settings))
@@ -110,6 +125,7 @@ def check_weaviate_status():
 
 
 @app.post("/api/upload")
+@login_required
 def upload():
     file = request.files.get("file")
     if not file or not file.filename:
@@ -141,6 +157,7 @@ def upload():
 
 
 @app.post("/api/upload_url")
+@login_required
 def upload_url():
     url = (request.json or {}).get("url", "").strip()
     if not url:
@@ -155,6 +172,7 @@ def upload_url():
 
 
 @app.post("/api/ask")
+@login_required
 def ask():
     payload = request.json or {}
     question = payload.get("question", "").strip()
@@ -205,6 +223,7 @@ def ask():
 
 
 @app.post("/api/feedback")
+@login_required
 def feedback():
     try:
         save_feedback(app.config["FEEDBACK_LOG"], feedback_log_lock, request.json or {})
