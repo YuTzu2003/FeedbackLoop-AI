@@ -24,6 +24,8 @@ llm_settings = load_llm_settings()
 app = Flask(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
+HISTORY_DIR = f"{BASE_DIR}/tasks/historys"
+Path(HISTORY_DIR).mkdir(parents=True, exist_ok=True)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 app.config["NOTEBOOK_DATA_ROOT"] = BASE_DIR / "tasks/notebooks"
 app.config["PDF_CHUNK_REPORT_DIR"] = f"{BASE_DIR}/tmp/pdf_chunks"
@@ -212,6 +214,20 @@ def ask():
     return jsonify(answer=answer, sources=sources, history_id=record["id"], notebook_id=notebook_id)
 
 
+<<<<<<< HEAD
+=======
+@app.post("/api/feedback")
+@login_required
+def feedback():
+    try:
+        save_feedback(app.config["FEEDBACK_LOG"], feedback_log_lock, request.json or {})
+    except ValueError as error:
+        return jsonify(error=str(error)), 400
+    except FileExistsError as error:
+        return jsonify(error=str(error)), 409
+    return jsonify(status="saved"), 201
+
+>>>>>>> main
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
