@@ -5,16 +5,17 @@ from uuid import uuid4
 from dotenv import load_dotenv
 import logging
 import sys
-from flask import Flask, jsonify, render_template, request, session, redirect, url_for
+from flask import Flask, jsonify, render_template, request, session
 from pipeline.retrieve_answer import answer_from_chunks, answer_from_history, retrieve_chunks
 from pipeline.load_url import ingest_web_url
 from pipeline.load_pdf import ingest_pdf
 from services.config import load_settings
 from services.api import load_llm_settings, get_system_prompt
 from services.vectordb import RagServiceError, delete_document, weaviate_status
-from services.storage import (append_jsonl,delete_notebook_data,notebook_data_dir,notebook_history,notebook_history_path,read_jsonl,save_feedback,save_upload,)
-from services.notebook_repositories import create_notebook, delete_notebook as delete_notebook_record, get_notebook, list_notebooks as list_notebook_records
+from services.notebook_repositories import (append_jsonl,delete_notebook_data,notebook_data_dir,notebook_history,notebook_history_path,save_upload, create_notebook, delete_notebook as delete_notebook_record, get_notebook, list_notebooks as list_notebook_records)
 import os
+from services.auth import auth_bp, login_required, admin_required
+from services.feedback import feedback_bp
 
 load_dotenv()
 settings = load_settings()
@@ -23,13 +24,9 @@ llm_settings = load_llm_settings()
 app = Flask(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
-HISTORY_DIR = f"{BASE_DIR}/tasks/historys"
-Path(HISTORY_DIR).mkdir(parents=True, exist_ok=True)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
-app.config["FEEDBACK_LOG"] = f"{HISTORY_DIR}/feedbacks.jsonl"
 app.config["NOTEBOOK_DATA_ROOT"] = BASE_DIR / "tasks/notebooks"
 app.config["PDF_CHUNK_REPORT_DIR"] = f"{BASE_DIR}/tmp/pdf_chunks"
-feedback_log_lock = Lock()
 notebook_history_log_lock = Lock()
 
 logging.basicConfig(level=logging.INFO,format='%(asctime)s | %(levelname)s | %(message)s',datefmt='%Y-%m-%d %H:%M:%S',handlers=[logging.StreamHandler(sys.stdout)])
@@ -38,9 +35,8 @@ werkzeug_logger.handlers = []
 werkzeug_logger.propagate = True
 app.secret_key = os.environ.get("SECRET_KEY") or os.urandom(32)
 
-from services.auth import auth_bp, login_required, admin_required
 app.register_blueprint(auth_bp)
-
+app.register_blueprint(feedback_bp)
 
 def current_user_notebook(notebook_id: str) -> dict | None:
     return get_notebook(notebook_id, str(session["id"]))
@@ -58,23 +54,10 @@ def index():
     return render_template("index.html", llm_model=llm_settings.model)
 
 
-@app.get("/feedback")
-@app.get("/feedbacks")
-@login_required
-def feedback_page():
-    return render_template("feedback.html")
-
-
 @app.get("/connection")
 @admin_required
 def connection_page():
     return render_template("connection.html")
-
-
-@app.get("/api/feedbacks")
-@login_required
-def list_feedbacks():
-    return jsonify(items=read_jsonl(app.config["FEEDBACK_LOG"], "feedback"))
 
 
 @app.get("/api/notebooks")
@@ -228,17 +211,6 @@ def ask():
     append_jsonl(current_notebook_history_path(notebook_id), notebook_history_log_lock, record)
     return jsonify(answer=answer, sources=sources, history_id=record["id"], notebook_id=notebook_id)
 
-
-@app.post("/api/feedback")
-@login_required
-def feedback():
-    try:
-        save_feedback(app.config["FEEDBACK_LOG"], feedback_log_lock, request.json or {})
-    except ValueError as error:
-        return jsonify(error=str(error)), 400
-    except FileExistsError as error:
-        return jsonify(error=str(error)), 409
-    return jsonify(status="saved"), 201
 
 
 if __name__ == "__main__":

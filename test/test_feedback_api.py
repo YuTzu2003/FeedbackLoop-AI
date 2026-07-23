@@ -11,7 +11,7 @@ from types import SimpleNamespace
 import app
 from services.api import load_llm_settings
 from services.notebook_repositories import _notebook_from_row
-from services.storage import notebook_data_dir, notebook_history_path
+from services.notebook_repositories import notebook_data_dir, notebook_history_path
 from pipeline.load_pdf import write_pdf_chunk_report
 
 
@@ -21,14 +21,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 class WeaviateConnectionTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = TemporaryDirectory()
-        self.original_feedback_log = app.app.config["FEEDBACK_LOG"]
         self.original_notebook_data_root = app.app.config["NOTEBOOK_DATA_ROOT"]
         self.original_pdf_chunk_report_dir = app.app.config["PDF_CHUNK_REPORT_DIR"]
         app.app.config.update(TESTING=True)
-        app.app.config["FEEDBACK_LOG"] = Path(self.temp_dir.name) / "feedbacks.jsonl"
         app.app.config["NOTEBOOK_DATA_ROOT"] = Path(self.temp_dir.name) / "notebooks"
         app.app.config["PDF_CHUNK_REPORT_DIR"] = Path(self.temp_dir.name) / "pdf_chunks"
         self.client = app.app.test_client()
+        with self.client.session_transaction() as client_session:
+            client_session["id"] = "test-id"
+            client_session["position"] = "Admin"
         self.notebooks = {}
         self.notebook_patches = [
             patch("app.get_notebook", side_effect=self.get_notebook),
@@ -40,7 +41,6 @@ class WeaviateConnectionTests(unittest.TestCase):
             notebook_patch.start()
 
     def tearDown(self):
-        app.app.config["FEEDBACK_LOG"] = self.original_feedback_log
         app.app.config["NOTEBOOK_DATA_ROOT"] = self.original_notebook_data_root
         app.app.config["PDF_CHUNK_REPORT_DIR"] = self.original_pdf_chunk_report_dir
         for notebook_patch in self.notebook_patches:
@@ -70,35 +70,40 @@ class WeaviateConnectionTests(unittest.TestCase):
         self.assertEqual(response.json, {"ready": True, "live": True})
         status.assert_called_once_with(app.settings)
 
-    def test_feedback_is_appended_as_jsonl(self):
-        payload = {"score": "good", "note": "Clear", "question": "Q", "answer": "A", "history_id": "answer-1"}
+    @patch("services.feedback.create_feedback", return_value="feedback-1")
+    @patch("services.feedback.find_user_history", return_value={"id": "answer-1", "question": "Q", "answer": "A"})
+    def test_feedback_is_saved_to_mssql(self, find_history, create_feedback):
+        payload = {"score": "good", "note": "Clear", "question": "forged", "answer": "forged", "history_id": "answer-1"}
         response = self.client.post("/api/feedback", json=payload)
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json["status"], "saved")
-        record = json.loads(app.app.config["FEEDBACK_LOG"].read_text(encoding="utf-8"))
-        self.assertEqual(record["score"], "good")
-        self.assertEqual(record["note"], "Clear")
-        self.assertEqual(record["history_id"], "answer-1")
-        listed = self.client.get("/api/feedbacks")
-        self.assertEqual(listed.status_code, 200)
-        self.assertEqual(listed.json["items"][0]["question"], "Q")
-        duplicate = self.client.post("/api/feedback", json=payload)
-        self.assertEqual(duplicate.status_code, 409)
+        self.assertEqual(response.json["feedback_id"], "feedback-1")
+        find_history.assert_called_once_with(app.app.config["NOTEBOOK_DATA_ROOT"], "test-id", "answer-1")
+        create_feedback.assert_called_once_with("test-id", {"id": "answer-1", "question": "Q", "answer": "A"}, "good", "Clear")
 
     def test_negative_feedback_requires_a_note(self):
-        response = self.client.post("/api/feedback", json={"score": "bad", "note": " ", "history_id": "answer-2"})
+        response = self.client.post("/api/feedback", json={"score": "bad", "note": " ", "history_id": "answer-1"})
+
         self.assertEqual(response.status_code, 400)
-        self.assertIn("請說明需要改善的地方", response.json["error"])
+        self.assertIn("note is required", response.json["error"])
 
-    def test_feedback_and_connection_pages_use_the_correct_templates(self):
-        self.assertIn("回饋紀錄", self.client.get("/feedback").get_data(as_text=True))
+    def test_feedback_requires_an_existing_answer(self):
+        response = self.client.post("/api/feedback", json={"score": "good", "note": "Clear", "history_id": "missing"})
+        self.assertEqual(response.status_code, 404)
+
+    def test_connection_page_uses_the_correct_template(self):
         self.assertIn("Weaviate", self.client.get("/connection").get_data(as_text=True))
-        self.assertEqual(self.client.get("/feedbacks").status_code, 200)
 
-    def test_feedback_page_restores_metrics_and_filters(self):
+    @patch("services.feedback.list_feedback", return_value=[{"score": "good", "question": "Q", "answer": "A", "note": "", "created_at": "2026-01-01T00:00:00+00:00"}])
+    def test_feedback_page_and_api_use_mssql_records(self, list_feedback):
         page = self.client.get("/feedback").get_data(as_text=True)
-        self.assertIn('id="total"', page)
-        self.assertIn('data-filter="good"', page)
+        response = self.client.get("/api/feedbacks")
+
+        self.assertIn("回饋紀錄", page)
+        self.assertIn('js/feedback.js', page)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["items"][0]["score"], "good")
+        list_feedback.assert_called_once_with("test-id")
 
     def test_upload_creates_a_notebook(self):
         response = self.client.post("/api/upload", data={"file": (BytesIO(b"name,value\na,1\n"), "report.csv")})
@@ -222,6 +227,7 @@ class WeaviateConnectionTests(unittest.TestCase):
         self.notebooks["book-b"] = {"id": "book-b", "name": "B", "owner_user_id": "user-b"}
         with self.client.session_transaction() as client_session:
             client_session["id"] = "user-a"
+            client_session["position"] = "Admin"
 
         self.assertEqual(self.client.get("/api/notebooks").json["items"], [{"id": "book-a", "name": "A", "owner_user_id": "user-a"}])
         self.assertEqual(self.client.get("/api/notebooks/book-b/history").status_code, 404)
