@@ -4,7 +4,7 @@ __pycache__/
 build/
 dist/
 wheels/
-uploads/
+tasks/
 .agents/
 *.egg-info
 *.jsonl

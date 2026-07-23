@@ -1,32 +1,31 @@
 {% extends "base.html" %}
 
 {% block title %}回饋紀錄｜FeedbackLoop AI{% endblock %}
-
 {% block nav_feedback %}active{% endblock %}
 
 {% block content %}
-    <main class="feedback-page">
-        <section class="page-heading">
-            <div>
-                <p class="eyebrow">FEEDBACK LOG</p>
-                <h1>回饋紀錄</h1>
-                <p>查看儲存於 JSONL 檔案的回答評價與補充內容。</p>
-            </div><button id="refresh" class="primary-button">重新整理</button>
-        </section>
-        <section class="metrics feedback-metrics">
-            <article><small>全部回饋</small><strong id="total">0</strong><span>已儲存紀錄</span></article>
-            <article><small>有幫助</small><strong id="good">0</strong><span>正向評價</span></article>
-            <article><small>需要改善</small><strong id="bad">0</strong><span>待優化項目</span></article>
-        </section>
-        <section class="feedback-toolbar">
-            <div class="filter" role="tablist"><button class="selected" data-filter="all">全部</button><button
-                    data-filter="good">有幫助</button><button data-filter="bad">需要改善</button></div><span
-                id="feedbackCount"></span>
-        </section>
-        <section id="feedbackList" class="feedback-list"></section>
-    </main>
+<main class="feedback-page">
+  <section class="page-heading">
+    <div>
+      <p class="eyebrow">FEEDBACK LOG</p>
+      <h1>回饋紀錄</h1>
+      <p>查看你已儲存的回答評價與補充內容。</p>
+    </div>
+    <button id="refresh" class="primary-button">重新整理</button>
+  </section>
+  <section class="metrics feedback-metrics">
+    <article><small>全部回饋</small><strong id="total">0</strong></article>
+    <article><small>有幫助</small><strong id="good">0</strong></article>
+    <article><small>需要改善</small><strong id="bad">0</strong></article>
+  </section>
+  <section class="feedback-toolbar">
+    <div class="filter" role="tablist"><button class="selected" data-filter="all">全部</button><button data-filter="good">有幫助</button><button data-filter="bad">需要改善</button></div>
+    <span id="feedbackCount"></span>
+  </section>
+  <section id="feedbackList" class="feedback-list"></section>
+</main>
 {% endblock %}
 
 {% block scripts %}
-    <script src="{{ url_for('static', filename='js/feedback.js') }}"></script>
+<script src="{{ url_for('static', filename='js/feedback.js') }}"></script>
 {% endblock %}

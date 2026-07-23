@@ -1,13 +1,17 @@
 import unittest
 import json
 import os
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+from types import SimpleNamespace
 
 import app
 from services.api import load_llm_settings
+from services.notebook_repositories import _notebook_from_row
+from services.notebook_repositories import notebook_data_dir, notebook_history_path
 from pipeline.load_pdf import write_pdf_chunk_report
 
 
@@ -17,26 +21,45 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 class WeaviateConnectionTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = TemporaryDirectory()
-        self.original_feedback_log = app.app.config["FEEDBACK_LOG"]
-        self.original_notebook_log = app.app.config["NOTEBOOK_LOG"]
-        self.original_notebook_history_log = app.app.config["NOTEBOOK_HISTORY_LOG"]
-        self.original_upload_folder = app.app.config["UPLOAD_FOLDER"]
+        self.original_notebook_data_root = app.app.config["NOTEBOOK_DATA_ROOT"]
         self.original_pdf_chunk_report_dir = app.app.config["PDF_CHUNK_REPORT_DIR"]
         app.app.config.update(TESTING=True)
-        app.app.config["FEEDBACK_LOG"] = Path(self.temp_dir.name) / "feedbacks.jsonl"
-        app.app.config["NOTEBOOK_LOG"] = Path(self.temp_dir.name) / "notebooks.jsonl"
-        app.app.config["NOTEBOOK_HISTORY_LOG"] = Path(self.temp_dir.name) / "notebook_history.jsonl"
-        app.app.config["UPLOAD_FOLDER"] = Path(self.temp_dir.name) / "uploads"
+        app.app.config["NOTEBOOK_DATA_ROOT"] = Path(self.temp_dir.name) / "notebooks"
         app.app.config["PDF_CHUNK_REPORT_DIR"] = Path(self.temp_dir.name) / "pdf_chunks"
         self.client = app.app.test_client()
+        with self.client.session_transaction() as client_session:
+            client_session["id"] = "test-id"
+            client_session["position"] = "Admin"
+        self.notebooks = {}
+        self.notebook_patches = [
+            patch("app.get_notebook", side_effect=self.get_notebook),
+            patch("app.list_notebook_records", side_effect=self.list_notebooks),
+            patch("app.create_notebook", side_effect=self.create_notebook),
+            patch("app.delete_notebook_record", side_effect=self.delete_notebook),
+        ]
+        for notebook_patch in self.notebook_patches:
+            notebook_patch.start()
 
     def tearDown(self):
-        app.app.config["FEEDBACK_LOG"] = self.original_feedback_log
-        app.app.config["NOTEBOOK_LOG"] = self.original_notebook_log
-        app.app.config["NOTEBOOK_HISTORY_LOG"] = self.original_notebook_history_log
-        app.app.config["UPLOAD_FOLDER"] = self.original_upload_folder
+        app.app.config["NOTEBOOK_DATA_ROOT"] = self.original_notebook_data_root
         app.app.config["PDF_CHUNK_REPORT_DIR"] = self.original_pdf_chunk_report_dir
+        for notebook_patch in self.notebook_patches:
+            notebook_patch.stop()
         self.temp_dir.cleanup()
+
+    def get_notebook(self, notebook_id, owner_user_id):
+        notebook = self.notebooks.get(notebook_id)
+        return notebook if notebook and notebook["owner_user_id"] == str(owner_user_id) else None
+
+    def list_notebooks(self, owner_user_id):
+        return [notebook for notebook in self.notebooks.values() if notebook["owner_user_id"] == str(owner_user_id)]
+
+    def create_notebook(self, owner_user_id, notebook):
+        self.notebooks[notebook["id"]] = {**notebook, "owner_user_id": str(owner_user_id)}
+
+    def delete_notebook(self, notebook_id, owner_user_id):
+        if self.get_notebook(notebook_id, owner_user_id):
+            del self.notebooks[notebook_id]
 
     @patch("app.weaviate_status", return_value={"ready": True, "live": True})
     def test_status_uses_the_rag_service(self, status):
@@ -47,55 +70,80 @@ class WeaviateConnectionTests(unittest.TestCase):
         self.assertEqual(response.json, {"ready": True, "live": True})
         status.assert_called_once_with(app.settings)
 
-    def test_feedback_is_appended_as_jsonl(self):
-        payload = {"score": "good", "note": "Clear", "question": "Q", "answer": "A", "history_id": "answer-1"}
+    @patch("services.feedback.create_feedback", return_value="feedback-1")
+    @patch("services.feedback.find_user_history", return_value={"id": "answer-1", "question": "Q", "answer": "A"})
+    def test_feedback_is_saved_to_mssql(self, find_history, create_feedback):
+        payload = {"score": "good", "note": "Clear", "question": "forged", "answer": "forged", "history_id": "answer-1"}
         response = self.client.post("/api/feedback", json=payload)
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json["status"], "saved")
-        record = json.loads(app.app.config["FEEDBACK_LOG"].read_text(encoding="utf-8"))
-        self.assertEqual(record["score"], "good")
-        self.assertEqual(record["note"], "Clear")
-        self.assertEqual(record["history_id"], "answer-1")
-        listed = self.client.get("/api/feedbacks")
-        self.assertEqual(listed.status_code, 200)
-        self.assertEqual(listed.json["items"][0]["question"], "Q")
-        duplicate = self.client.post("/api/feedback", json=payload)
-        self.assertEqual(duplicate.status_code, 409)
+        self.assertEqual(response.json["feedback_id"], "feedback-1")
+        find_history.assert_called_once_with(app.app.config["NOTEBOOK_DATA_ROOT"], "test-id", "answer-1")
+        create_feedback.assert_called_once_with("test-id", {"id": "answer-1", "question": "Q", "answer": "A"}, "good", "Clear")
 
     def test_negative_feedback_requires_a_note(self):
-        response = self.client.post("/api/feedback", json={"score": "bad", "note": " ", "history_id": "answer-2"})
+        response = self.client.post("/api/feedback", json={"score": "bad", "note": " ", "history_id": "answer-1"})
+
         self.assertEqual(response.status_code, 400)
-        self.assertIn("請說明需要改善的地方", response.json["error"])
+        self.assertIn("note is required", response.json["error"])
 
-    def test_feedback_and_connection_pages_use_the_correct_templates(self):
-        self.assertIn("回饋紀錄", self.client.get("/feedback").get_data(as_text=True))
+    def test_feedback_requires_an_existing_answer(self):
+        response = self.client.post("/api/feedback", json={"score": "good", "note": "Clear", "history_id": "missing"})
+        self.assertEqual(response.status_code, 404)
+
+    def test_connection_page_uses_the_correct_template(self):
         self.assertIn("Weaviate", self.client.get("/connection").get_data(as_text=True))
-        self.assertEqual(self.client.get("/feedbacks").status_code, 200)
 
-    def test_feedback_page_restores_metrics_and_filters(self):
+    @patch("services.feedback.list_feedback", return_value=[{"score": "good", "question": "Q", "answer": "A", "note": "", "created_at": "2026-01-01T00:00:00+00:00"}])
+    def test_feedback_page_and_api_use_mssql_records(self, list_feedback):
         page = self.client.get("/feedback").get_data(as_text=True)
-        self.assertIn('id="total"', page)
-        self.assertIn('data-filter="good"', page)
+        response = self.client.get("/api/feedbacks")
+
+        self.assertIn("回饋紀錄", page)
+        self.assertIn('js/feedback.js', page)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["items"][0]["score"], "good")
+        list_feedback.assert_called_once_with("test-id")
 
     def test_upload_creates_a_notebook(self):
         response = self.client.post("/api/upload", data={"file": (BytesIO(b"name,value\na,1\n"), "report.csv")})
 
         self.assertEqual(response.status_code, 200)
-        notebook = app.read_jsonl(app.app.config["NOTEBOOK_LOG"], "notebook")[0]
+        notebook = self.notebooks[response.json["notebook_id"]]
         self.assertEqual(notebook["id"], response.json["notebook_id"])
         self.assertEqual(notebook["name"], "report.csv")
-        self.assertTrue((app.app.config["UPLOAD_FOLDER"] / notebook["stored_filename"]).exists())
+        self.assertEqual(notebook["owner_user_id"], "test-id")
+        notebook_dir = notebook_data_dir(app.app.config["NOTEBOOK_DATA_ROOT"], "test-id", notebook["id"])
+        self.assertTrue((notebook_dir / notebook["stored_filename"]).exists())
+
+    def test_sql_notebook_uses_the_new_column_names(self):
+        notebook = _notebook_from_row(
+            SimpleNamespace(
+                NotebookId="book-1",
+                UserID=7,
+                Title="Quarterly report",
+                StoreFilename="book-1_report.csv",
+                SourceType="file",
+                Url=None,
+                ChunkCount=None,
+                CreatedAt=datetime(2026, 1, 1, 9, 0),
+            )
+        )
+
+        self.assertEqual(notebook["name"], "Quarterly report")
+        self.assertEqual(notebook["stored_filename"], "book-1_report.csv")
+        self.assertEqual(notebook["owner_user_id"], "7")
 
     @patch("app.ingest_pdf", return_value={"source_type": "pdf", "chunk_count": 2, "processed_pages": 1, "ocr_pages": 0})
     def test_pdf_upload_indexes_chunks_before_creating_notebook(self, ingest):
         response = self.client.post("/api/upload", data={"file": (BytesIO(b"%PDF-1.4"), "report.pdf")})
 
         self.assertEqual(response.status_code, 200)
-        notebook = app.read_jsonl(app.app.config["NOTEBOOK_LOG"], "notebook")[0]
+        notebook = self.notebooks[response.json["notebook_id"]]
         self.assertEqual(notebook["source_type"], "pdf")
         self.assertEqual(response.json["chunk_count"], 2)
         ingest.assert_called_once_with(
-            app.app.config["UPLOAD_FOLDER"] / notebook["stored_filename"],
+            notebook_data_dir(app.app.config["NOTEBOOK_DATA_ROOT"], "test-id", notebook["id"]) / notebook["stored_filename"],
             document_id=notebook["id"],
             filename="report.pdf",
             settings=app.settings,
@@ -114,7 +162,7 @@ class WeaviateConnectionTests(unittest.TestCase):
         response = self.client.post("/api/upload_url", json={"url": "https://example.com"})
 
         self.assertEqual(response.status_code, 200)
-        notebook = app.read_jsonl(app.app.config["NOTEBOOK_LOG"], "notebook")[0]
+        notebook = self.notebooks[response.json["notebook_id"]]
         self.assertEqual(notebook["source_type"], "web")
         self.assertEqual(notebook["url"], "https://example.com")
         self.assertEqual(notebook["chunk_count"], 2)
@@ -128,10 +176,7 @@ class WeaviateConnectionTests(unittest.TestCase):
     @patch("app.answer_from_chunks", return_value="答案來自來源內容")
     @patch("app.retrieve_chunks", return_value=[{"title": "Example page", "url": "https://example.com", "chunk_index": 1, "score": 0.91, "content": "source text"}])
     def test_web_notebook_question_uses_document_scoped_retrieval(self, retrieve, answer):
-        app.app.config["NOTEBOOK_LOG"].write_text(
-            json.dumps({"id": "web-1", "name": "Example page", "source_type": "web", "created_at": "2026-01-01T00:00:00+00:00"}) + "\n",
-            encoding="utf-8",
-        )
+        self.notebooks["web-1"] = {"id": "web-1", "name": "Example page", "source_type": "web", "owner_user_id": "test-id", "created_at": "2026-01-01T00:00:00+00:00"}
 
         response = self.client.post("/api/ask", json={"question": "What is the source?", "notebook_id": "web-1"})
 
@@ -143,10 +188,7 @@ class WeaviateConnectionTests(unittest.TestCase):
     @patch("app.answer_from_chunks", return_value="PDF answer")
     @patch("app.retrieve_chunks", return_value=[{"source_type": "pdf", "title": "report.pdf", "page_number": 2, "chunk_index": 1, "score": 0.91, "content": "source text"}])
     def test_pdf_notebook_question_uses_document_scoped_retrieval(self, retrieve, answer):
-        app.app.config["NOTEBOOK_LOG"].write_text(
-            json.dumps({"id": "pdf-1", "name": "report.pdf", "source_type": "pdf", "created_at": "2026-01-01T00:00:00+00:00"}) + "\n",
-            encoding="utf-8",
-        )
+        self.notebooks["pdf-1"] = {"id": "pdf-1", "name": "report.pdf", "source_type": "pdf", "owner_user_id": "test-id", "created_at": "2026-01-01T00:00:00+00:00"}
 
         response = self.client.post("/api/ask", json={"question": "What is the source?", "notebook_id": "pdf-1", "search_mode": "hybrid"})
 
@@ -157,24 +199,55 @@ class WeaviateConnectionTests(unittest.TestCase):
 
     @patch("app.answer_from_history", return_value="The revenue increased.")
     def test_notebook_history_is_sent_to_llm_and_new_answer_is_saved(self, answer):
-        notebook = {"id": "book-1", "name": "report.csv", "created_at": "2026-01-01T00:00:00+00:00"}
+        notebook = {"id": "book-1", "name": "report.csv", "owner_user_id": "test-id", "created_at": "2026-01-01T00:00:00+00:00"}
         old_record = {"id": "old-1", "notebook_id": "book-1", "question": "What was the revenue?", "answer": "100", "created_at": "2026-01-01T00:00:00+00:00"}
-        app.app.config["NOTEBOOK_LOG"].write_text(json.dumps(notebook) + "\n", encoding="utf-8")
-        app.app.config["NOTEBOOK_HISTORY_LOG"].write_text(json.dumps(old_record) + "\n", encoding="utf-8")
+        self.notebooks["book-1"] = notebook
+        history_path = notebook_history_path(app.app.config["NOTEBOOK_DATA_ROOT"], "test-id", "book-1")
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        history_path.write_text(json.dumps(old_record) + "\n", encoding="utf-8")
         response = self.client.post("/api/ask", json={"question": "Compare it with today.", "notebook_id": "book-1"})
 
         self.assertEqual(response.status_code, 200)
         messages = answer.call_args.args[0]
         self.assertIn({"role": "user", "content": "What was the revenue?"}, messages)
-        self.assertEqual(len(app.notebook_history(app.app.config["NOTEBOOK_HISTORY_LOG"], "book-1")), 2)
+        self.assertEqual(len(app.notebook_history(history_path, "book-1")), 2)
 
     def test_notebook_apis_scope_history_to_the_requested_notebook(self):
-        app.app.config["NOTEBOOK_LOG"].write_text('{"id":"book-1","name":"report.csv","created_at":"2026-01-01T00:00:00+00:00"}\n', encoding="utf-8")
-        app.app.config["NOTEBOOK_HISTORY_LOG"].write_text('{"id":"1","notebook_id":"book-1","question":"Q","answer":"A","created_at":"2026-01-01T00:00:00+00:00"}\n{"id":"2","notebook_id":"book-2","question":"Other","answer":"B","created_at":"2026-01-01T00:00:00+00:00"}\n', encoding="utf-8")
+        self.notebooks["book-1"] = {"id": "book-1", "name": "report.csv", "owner_user_id": "test-id", "created_at": "2026-01-01T00:00:00+00:00"}
+        history_path = notebook_history_path(app.app.config["NOTEBOOK_DATA_ROOT"], "test-id", "book-1")
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        history_path.write_text('{"id":"1","notebook_id":"book-1","question":"Q","answer":"A","created_at":"2026-01-01T00:00:00+00:00"}\n', encoding="utf-8")
         response = self.client.get("/api/notebooks/book-1/history")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json["items"][0]["id"], "1")
         self.assertEqual(self.client.get("/api/notebooks").json["items"][0]["id"], "book-1")
+
+    def test_notebooks_are_isolated_by_logged_in_user(self):
+        self.notebooks["book-a"] = {"id": "book-a", "name": "A", "owner_user_id": "user-a"}
+        self.notebooks["book-b"] = {"id": "book-b", "name": "B", "owner_user_id": "user-b"}
+        with self.client.session_transaction() as client_session:
+            client_session["id"] = "user-a"
+            client_session["position"] = "Admin"
+
+        self.assertEqual(self.client.get("/api/notebooks").json["items"], [{"id": "book-a", "name": "A", "owner_user_id": "user-a"}])
+        self.assertEqual(self.client.get("/api/notebooks/book-b/history").status_code, 404)
+        self.assertEqual(self.client.post("/api/ask", json={"question": "Q", "notebook_id": "book-b"}).status_code, 404)
+        self.assertEqual(self.client.delete("/api/notebooks/book-b").status_code, 404)
+
+    @patch("app.delete_document")
+    def test_deleting_a_notebook_removes_its_entire_data_directory(self, delete_document):
+        self.notebooks["book-1"] = {"id": "book-1", "name": "report.csv", "stored_filename": "report.csv", "owner_user_id": "test-id"}
+        notebook_dir = notebook_data_dir(app.app.config["NOTEBOOK_DATA_ROOT"], "test-id", "book-1")
+        notebook_dir.mkdir(parents=True)
+        (notebook_dir / "report.csv").write_text("name,value\na,1\n", encoding="utf-8")
+        (notebook_dir / "history.jsonl").write_text('{"id":"answer-1"}\n', encoding="utf-8")
+
+        response = self.client.delete("/api/notebooks/book-1")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertNotIn("book-1", self.notebooks)
+        self.assertFalse(notebook_dir.exists())
+        delete_document.assert_called_once_with("book-1", app.settings)
 
     def test_question_requires_an_existing_notebook(self):
         response = self.client.post("/api/ask", json={"question": "Q"})

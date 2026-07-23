@@ -13,9 +13,9 @@ document.querySelector(".filter").addEventListener("click", (event) => {
 });
 
 async function loadFeedback() {
-  list.innerHTML = '<p class="empty-log">正在讀取回饋紀錄…</p>';
   const response = await fetch("/api/feedbacks");
   const data = await response.json();
+  if (!response.ok) return;
   feedbackItems = data.items;
   document.querySelector("#total").textContent = feedbackItems.length;
   document.querySelector("#good").textContent = feedbackItems.filter((item) => item.score === "good").length;
@@ -25,14 +25,14 @@ async function loadFeedback() {
 
 function renderFeedback() {
   const visibleItems = feedbackItems.filter((item) => activeFilter === "all" || item.score === activeFilter);
-  count.textContent = `${visibleItems.length} 筆顯示中`;
-  list.innerHTML = visibleItems.length ? visibleItems.map(renderRecord).join("") : '<p class="empty-log">目前尚無符合條件的回饋紀錄。</p>';
+  count.textContent = `${visibleItems.length} 筆紀錄`;
+  list.innerHTML = visibleItems.length ? visibleItems.map(renderRecord).join("") : '<p class="empty-log">尚無回饋紀錄。</p>';
 }
 
 function renderRecord(item) {
-  const score = item.score === "good" ? "✓ 有幫助" : "✕ 需要改善";
-  return `<article class="feedback-record"><div><span class="feedback-score ${item.score}">${score}</span><time>${new Date(item.created_at).toLocaleString("zh-TW")}</time></div><h2>${escapeHtml(item.question || "未保留問題")}</h2><p>${escapeHtml(item.answer || "未保留回答")}</p>${item.note ? `<aside><b>補充說明</b>${escapeHtml(item.note)}</aside>` : ""}</article>`;
+  const score = item.score === "good" ? "有幫助" : "需要改善";
+  return `<article class="feedback-record"><div><span class="feedback-score ${item.score}">${score}</span><time>${new Date(item.created_at).toLocaleString("zh-TW")}</time></div><h2>${escapeHtml(item.question)}</h2><p>${escapeHtml(item.answer)}</p>${item.note ? `<aside><b>補充說明</b>${escapeHtml(item.note)}</aside>` : ""}</article>`;
 }
 
-function escapeHtml(value) { const element = document.createElement("div"); element.textContent = value; return element.innerHTML; }
+function escapeHtml(value) { const element = document.createElement("div"); element.textContent = value || ""; return element.innerHTML; }
 loadFeedback();

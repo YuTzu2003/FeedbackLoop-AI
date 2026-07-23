@@ -6,7 +6,7 @@ from uuid import uuid4
 import requests
 from bs4 import BeautifulSoup
 from services.config import Settings
-from services.vectordb import (CHUNK_OVERLAP,CHUNK_SIZE,RagServiceError,embedding,rag_collection,weaviate_client,)
+from services.vectordb import (CHUNK_OVERLAP,CHUNK_SIZE,RagServiceError,embedding,rag_collection,weaviate_client,delete_document)
 
 def validate_public_url(url: str) -> str:
     parsed = urlparse(url)
@@ -79,9 +79,13 @@ def ingest_web_url(url: str, settings: Settings) -> dict:
                 },
                 vector=embedding(content, settings),
             )
-    except RagServiceError:
-        raise
     except Exception as error:
+        try:
+            delete_document(document_id, settings)
+        except Exception:
+            pass
+        if isinstance(error, RagServiceError):
+            raise
         raise RagServiceError("網址來源建立失敗，請確認 Weaviate 服務。", 503) from error
     finally:
         client.close()

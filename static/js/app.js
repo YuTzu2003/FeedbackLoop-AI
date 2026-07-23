@@ -101,10 +101,10 @@ async function selectNotebook(notebookId) {
 
 async function loadNotebookHistory() {
   if (!activeNotebookId) return;
-  const [response, feedbackResponse] = await Promise.all([fetch(`/api/notebooks/${activeNotebookId}/history`), fetch("/api/feedbacks")]);
-  const [data, feedbackData] = await Promise.all([response.json(), feedbackResponse.json()]);
+  const response = await fetch(`/api/notebooks/${activeNotebookId}/history`);
+  const data = await response.json();
   if (!response.ok) return;
-  feedbackHistoryIds = new Set(feedbackData.items.map((item) => item.history_id).filter(Boolean));
+  feedbackHistoryIds = new Set();
   conversation.innerHTML = data.items.length ? data.items.map((item) => renderHistoryItem(item)).join("") : '<div class="empty-state"><h3>開始這份文件的對話</h3><p>提出問題後，問答會保留在目前的筆記本中。</p></div>';
   conversation.scrollTop = conversation.scrollHeight;
 }
