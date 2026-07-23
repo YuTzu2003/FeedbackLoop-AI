@@ -25,20 +25,21 @@ def llm_client(settings: LLMSettings) -> openai.OpenAI:
         timeout=settings.timeout,
     )
 
-def get_rag_prompt(question: str, contexts: str) -> str:
+def get_rag_prompt(question: str, contexts: str, personal_instruction: str = "") -> str:
     return (
         "Please answer the questions clearly in respond to the question in the language the user used, based on the following sources.\n"
         "If the source content is insufficient to fully answer the question, you must explicitly reply: 'Based on the currently provided information, I cannot answer this question.' Under no circumstances should you return an empty response.\n\n"
-        f"Question: {question}\n\nSources:\n{contexts}"
+        f"{personal_instruction}\n\nQuestion: {question}\n\nSources:\n{contexts}"
     )
 
-def get_system_prompt() -> dict:
+def get_system_prompt(personal_instruction: str = "") -> dict:
     return {
         "role": "system",
         "content": (
             "You are a retrieval-augmented generation (RAG) assistant. "
             "Answer the user's question accurately and concisely using the provided context and conversation history as the primary source of truth. "
             "If the available information is insufficient, clearly state that you do not have enough information to answer; do not invent facts, sources, or citations. "
-            "Keep responses well-structured, factual, and directly responsive. Never return an empty or meaningless response."
+            "Keep responses well-structured, factual, and directly responsive. Never return an empty or meaningless response. "
+            f"{personal_instruction}"
         ),
     }

@@ -15,7 +15,8 @@ from services.vectordb import RagServiceError, delete_document, weaviate_status
 from services.notebook_repositories import (append_jsonl,delete_notebook_data,notebook_data_dir,notebook_history,notebook_history_path,save_upload, create_notebook, delete_notebook as delete_notebook_record, get_notebook, list_notebooks as list_notebook_records)
 import os
 from services.auth import auth_bp, login_required, admin_required
-from services.feedback import feedback_bp
+from feedback import feedback_bp
+from feedback.profile import load_profile, preferences_instruction
 
 load_dotenv()
 settings = load_settings()
@@ -29,6 +30,7 @@ Path(HISTORY_DIR).mkdir(parents=True, exist_ok=True)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 app.config["NOTEBOOK_DATA_ROOT"] = BASE_DIR / "tasks/notebooks"
 app.config["PDF_CHUNK_REPORT_DIR"] = f"{BASE_DIR}/tmp/pdf_chunks"
+app.config["LLM_SETTINGS"] = llm_settings
 notebook_history_log_lock = Lock()
 
 logging.basicConfig(level=logging.INFO,format='%(asctime)s | %(levelname)s | %(message)s',datefmt='%Y-%m-%d %H:%M:%S',handlers=[logging.StreamHandler(sys.stdout)])
@@ -178,12 +180,14 @@ def ask():
     notebook = current_user_notebook(notebook_id)
     if not notebook:
         return jsonify(error="找不到此筆記本。"), 404
+    profile = load_profile(app.config["NOTEBOOK_DATA_ROOT"], str(session["id"]))
+    personal_instruction = preferences_instruction(profile)
     try:
         if notebook.get("source_type") in {"web", "pdf"}:
             chunks = retrieve_chunks(question, notebook_id, settings, llm_settings, search_mode)
             if not chunks:
                 return jsonify(error="找不到此網址來源的相關內容。"), 404
-            answer = answer_from_chunks(question, chunks, llm_settings)
+            answer = answer_from_chunks(question, chunks, llm_settings, personal_instruction)
             sources = [
                 {
                     key: item.get(key)
@@ -192,7 +196,7 @@ def ask():
                 for item in chunks
             ]
         else:
-            messages = [get_system_prompt()]
+            messages = [get_system_prompt(personal_instruction)]
             for item in reversed(notebook_history(current_notebook_history_path(notebook_id), notebook_id)[:3]):
                 messages.extend([{"role": "user", "content": item["question"]}, {"role": "assistant", "content": item["answer"]}])
             messages.append({"role": "user", "content": question})

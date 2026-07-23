@@ -5,7 +5,7 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 from types import SimpleNamespace
 
 import app
@@ -70,8 +70,8 @@ class WeaviateConnectionTests(unittest.TestCase):
         self.assertEqual(response.json, {"ready": True, "live": True})
         status.assert_called_once_with(app.settings)
 
-    @patch("services.feedback.create_feedback", return_value="feedback-1")
-    @patch("services.feedback.find_user_history", return_value={"id": "answer-1", "question": "Q", "answer": "A"})
+    @patch("feedback.routes.create_feedback", return_value="feedback-1")
+    @patch("feedback.routes.find_user_history", return_value={"id": "answer-1", "question": "Q", "answer": "A"})
     def test_feedback_is_saved_to_mssql(self, find_history, create_feedback):
         payload = {"score": "good", "note": "Clear", "question": "forged", "answer": "forged", "history_id": "answer-1"}
         response = self.client.post("/api/feedback", json=payload)
@@ -94,7 +94,7 @@ class WeaviateConnectionTests(unittest.TestCase):
     def test_connection_page_uses_the_correct_template(self):
         self.assertIn("Weaviate", self.client.get("/connection").get_data(as_text=True))
 
-    @patch("services.feedback.list_feedback", return_value=[{"score": "good", "question": "Q", "answer": "A", "note": "", "created_at": "2026-01-01T00:00:00+00:00"}])
+    @patch("feedback.routes.list_feedback", return_value=[{"score": "good", "question": "Q", "answer": "A", "note": "", "created_at": "2026-01-01T00:00:00+00:00"}])
     def test_feedback_page_and_api_use_mssql_records(self, list_feedback):
         page = self.client.get("/feedback").get_data(as_text=True)
         response = self.client.get("/api/feedbacks")
@@ -182,7 +182,7 @@ class WeaviateConnectionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         retrieve.assert_called_once_with("What is the source?", "web-1", app.settings, app.llm_settings, "near_vector")
-        answer.assert_called_once_with("What is the source?", retrieve.return_value, app.llm_settings)
+        answer.assert_called_once_with("What is the source?", retrieve.return_value, app.llm_settings, ANY)
         self.assertEqual(response.json["sources"][0]["url"], "https://example.com")
 
     @patch("app.answer_from_chunks", return_value="PDF answer")
@@ -194,7 +194,7 @@ class WeaviateConnectionTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         retrieve.assert_called_once_with("What is the source?", "pdf-1", app.settings, app.llm_settings, "hybrid")
-        answer.assert_called_once_with("What is the source?", retrieve.return_value, app.llm_settings)
+        answer.assert_called_once_with("What is the source?", retrieve.return_value, app.llm_settings, ANY)
         self.assertEqual(response.json["sources"][0]["page_number"], 2)
 
     @patch("app.answer_from_history", return_value="The revenue increased.")

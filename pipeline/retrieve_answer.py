@@ -74,9 +74,9 @@ def retrieve_chunks(question: str,document_id: str,settings: Settings,llm_settin
         client.close()
 
 
-def answer_from_chunks(question: str, chunks: list[dict], llm_settings: LLMSettings) -> str:
+def answer_from_chunks(question: str, chunks: list[dict], llm_settings: LLMSettings, personal_instruction: str = "") -> str:
     contexts = "\n\n".join(f"[{item['title']} | {item['url']}]\n{item['content']}" for item in chunks)
-    prompt = get_rag_prompt(question, contexts)
+    prompt = get_rag_prompt(question, contexts, personal_instruction)
     client = llm_client(llm_settings)
     try:
         response = client.chat.completions.create(

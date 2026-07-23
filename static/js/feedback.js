@@ -21,7 +21,7 @@ async function loadFeedback() {
   document.querySelector("#good").textContent = feedbackItems.filter((item) => item.score === "good").length;
   document.querySelector("#bad").textContent = feedbackItems.filter((item) => item.score === "bad").length;
   renderFeedback();
-}
+};
 
 function renderFeedback() {
   const visibleItems = feedbackItems.filter((item) => activeFilter === "all" || item.score === activeFilter);
