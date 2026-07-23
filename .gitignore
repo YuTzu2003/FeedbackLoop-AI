@@ -14,7 +14,6 @@ uploads/
 .venv
 *.lock
 *.env
-.python-version
 AGENTS.md
 CLAUDE.md
 GEMINI.md

@@ -17,9 +17,17 @@
         <nav>
             <a class="{% block nav_index %}{% endblock %}" href="/">資料問答</a>
             <a class="{% block nav_feedback %}{% endblock %}" href="/feedback">回饋紀錄</a>
+            {% if session.get('position', '') | string | trim | lower == 'admin' %}
             <a class="{% block nav_connection %}{% endblock %}" href="/connection">系統連線</a>
+            {% endif %}
         </nav>
         {% block topbar_extra %}{% endblock %}
+        {% if session.get('id') %}
+        <div style="margin-left: auto; display: flex; align-items: center; gap: 15px;">
+            <span style="font-size: 13px; color: var(--muted);">{{ session.get('name', session.get('id')) }}</span>
+            <a href="{{ url_for('auth.logout') }}" style="font-size: 13px; color: var(--ink); text-decoration: none; padding: 4px 10px; border: 1px solid var(--line); border-radius: 6px; transition: background 0.2s;" onmouseover="this.style.background='#fdf2f2'; this.style.color='var(--red)'; this.style.borderColor='#f9dcdc'" onmouseout="this.style.background='transparent'; this.style.color='var(--ink)'; this.style.borderColor='var(--line)'">登出</a>
+        </div>
+        {% endif %}
     </header>
     {% block content %}{% endblock %}
     {% block scripts %}{% endblock %}
