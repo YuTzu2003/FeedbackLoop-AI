@@ -7,7 +7,6 @@ from services.config import Settings
 RAG_COLLECTION = "FeedbackLoopDocuments"
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 100
-TOP_K = 3
 RAG_PROPERTIES = [
     Property(name="chunk_id", data_type=DataType.TEXT),
     Property(name="document_id", data_type=DataType.TEXT),

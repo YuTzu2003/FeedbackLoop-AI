@@ -1,0 +1,5 @@
+{
+  "status": "blocked",
+  "reason": "The fixed PDF evaluation set has no matching indexed PDF document_id in this workspace. The only available document is an unrelated web page, so no PDF retrieval metrics were fabricated.",
+  "next_command": "uv run python test/evaluate_manual_retrieval.py --document-id <pdf-notebook-id> --output output/evaluation/baseline.json"
+}

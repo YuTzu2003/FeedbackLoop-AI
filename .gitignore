@@ -9,6 +9,8 @@ tasks/
 *.egg-info
 *.jsonl
 *.json
+!test/rag_manual_evaluation.json
+!output/evaluation/baseline.json
 
 # Virtual environments
 .venv
@@ -17,3 +19,4 @@ tasks/
 AGENTS.md
 CLAUDE.md
 GEMINI.md
+.codex/
