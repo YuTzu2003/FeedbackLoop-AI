@@ -34,5 +34,26 @@
     "expected_keywords": [],
     "expect_refusal": true,
     "type": "unanswerable"
+  },
+  {
+    "id": "field_basic_histology_001",
+    "question": "組織型態欄位的英文名稱、欄位長度與資料型態為何？",
+    "expected_keywords": ["Histology", "5", "文字"],
+    "expected_field_code": "2.8",
+    "type": "field_basic"
+  },
+  {
+    "id": "field_detail_histology_001",
+    "question": "請完整說明組織型態欄位的欄位敘述、收錄目的與編碼指引。",
+    "expected_keywords": ["原發腫瘤細胞", "收錄目的", "ICD-O-3", "M-code", "Solid Tumor coding rules"],
+    "expected_field_code": "2.8",
+    "type": "field_detail"
+  },
+  {
+    "id": "field_full_histology_001",
+    "question": "請完整介紹組織型態欄位。",
+    "expected_keywords": ["Histology", "欄位長度", "2.8", "欄位敘述", "收錄目的", "編碼指引"],
+    "expected_field_code": "2.8",
+    "type": "field_full"
   }
 ]

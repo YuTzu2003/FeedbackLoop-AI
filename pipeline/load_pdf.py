@@ -11,6 +11,19 @@ from services.config import Settings
 from services.vectordb import (CHUNK_OVERLAP,CHUNK_SIZE,RagServiceError,embedding,rag_collection,weaviate_client,)
 
 _CID = re.compile(r"\(cid\s*:\s*\d+\s*\)", re.IGNORECASE)
+FIELD_CODE_PATTERN = re.compile(r"癌登欄位序號\s*#?\s*([0-9]+(?:\.[0-9]+)*)")
+FIELD_LENGTH_PATTERN = re.compile(r"欄位長度[：:]\s*(\d+)")
+SUMMARY_ROW_PATTERN = re.compile(
+    r"^\s*(\d+(?:\.\d+)+)\s+(.+?)\s+([A-Za-z][A-Za-z /-]+?)\s+(\d+)\s+(文字|數字|日期|英數)\s*$"
+)
+DETAIL_HEADINGS = (
+    ("欄位敘述", "description"),
+    ("收錄目的", "purpose"),
+    ("編碼指引", "coding_instruction"),
+    ("附註", "note"),
+    ("注意", "note"),
+    ("例外", "exception"),
+)
 
 @dataclass(frozen=True)
 class LayoutBlock:
@@ -98,6 +111,156 @@ def build_chunks(blocks: Iterable[LayoutBlock], chunk_size: int, overlap: int) -
     return chunks
 
 
+def detail_type_for(text: str) -> str | None:
+    normalized = text.strip().lstrip("•")
+    for marker, detail_type in DETAIL_HEADINGS:
+        if normalized.startswith(marker):
+            return detail_type
+    return None
+
+
+def field_header_start(blocks: list[LayoutBlock], code_index: int) -> int:
+    start = code_index
+    page = blocks[code_index].page
+    while start and blocks[start - 1].page == page and blocks[start - 1].kind == "title":
+        start -= 1
+    return start
+
+
+def field_header_values(header_blocks: list[LayoutBlock], code: str) -> dict:
+    texts = [block.text for block in header_blocks]
+    length_match = FIELD_LENGTH_PATTERN.search(" ".join(texts))
+    english_name = next(
+        (
+            text
+            for text in texts
+            if re.fullmatch(r"[A-Za-z][A-Za-z /-]+", text)
+        ),
+        "",
+    )
+    field_name = next(
+        (
+            text
+            for text in texts
+            if text != english_name and "欄位長度" not in text and not FIELD_CODE_PATTERN.search(text)
+            and any("\u4e00" <= character <= "\u9fff" for character in text)
+        ),
+        "",
+    )
+    return {
+        "field_code": code,
+        "field_name": field_name,
+        "field_english_name": english_name,
+        "length": length_match.group(1) if length_match else "",
+    }
+
+
+def build_field_chunks(blocks: Iterable[LayoutBlock]) -> list[dict]:
+    visible_blocks = [block for block in blocks if block.kind not in {"header", "footer"}]
+    overview_rows = {}
+    for block in visible_blocks:
+        match = SUMMARY_ROW_PATTERN.fullmatch(block.text)
+        if match:
+            overview_rows[match.group(1)] = {
+                "field_name": match.group(2),
+                "field_english_name": match.group(3).strip(),
+                "length": match.group(4),
+                "data_type": match.group(5),
+                "page": block.page,
+            }
+
+    code_indexes = [index for index, block in enumerate(visible_blocks) if FIELD_CODE_PATTERN.search(block.text)]
+    field_chunks: list[dict] = []
+    for position, code_index in enumerate(code_indexes):
+        code_match = FIELD_CODE_PATTERN.search(visible_blocks[code_index].text)
+        if not code_match:
+            continue
+        field_code = code_match.group(1)
+        start = field_header_start(visible_blocks, code_index)
+        end = field_header_start(visible_blocks, code_indexes[position + 1]) if position + 1 < len(code_indexes) else len(visible_blocks)
+        header = visible_blocks[start : code_index + 1]
+        section = visible_blocks[code_index + 1 : end]
+        values = field_header_values(header, field_code)
+        overview = overview_rows.get(field_code, {})
+        for key in ("field_name", "field_english_name", "length"):
+            if overview.get(key):
+                values[key] = overview[key]
+        if not values["field_name"]:
+            continue
+
+        token = field_code.replace(".", "_")
+        summary_page = overview.get("page", header[0].page)
+        summary_content = "\n".join(
+            value
+            for value in (
+                f"欄位編號：{field_code}",
+                f"欄位名稱：{values['field_name']}",
+                f"英文欄位名稱：{values['field_english_name']}" if values["field_english_name"] else "",
+                f"欄位長度：{values['length']}" if values["length"] else "",
+                f"資料型態：{overview.get('data_type', '')}" if overview.get("data_type") else "",
+            )
+            if value
+        )
+        parent_chunk_id = f"field_{token}_detail_parent"
+        field_chunks.append(
+            {
+                "chunk_id": f"field_{token}_summary",
+                "page_number": summary_page,
+                "page_start": summary_page,
+                "page_end": summary_page,
+                "block_type": "field_summary",
+                "field_code": field_code,
+                "field_name": values["field_name"],
+                "field_english_name": values["field_english_name"],
+                "detail_type": "",
+                "parent_chunk_id": "",
+                "content": summary_content,
+            }
+        )
+        detail_positions = [index for index, block in enumerate(section) if detail_type_for(block.text)]
+        if not detail_positions:
+            continue
+        detail_blocks = section[detail_positions[0] :]
+        parent_content = " ".join(" ".join(block.text.split()) for block in detail_blocks)
+        field_chunks.append(
+            {
+                "chunk_id": parent_chunk_id,
+                "page_number": detail_blocks[0].page,
+                "page_start": detail_blocks[0].page,
+                "page_end": detail_blocks[-1].page,
+                "block_type": "field_detail_parent",
+                "field_code": field_code,
+                "field_name": values["field_name"],
+                "field_english_name": values["field_english_name"],
+                "detail_type": "",
+                "parent_chunk_id": "",
+                "content": parent_content,
+            }
+        )
+        for part_index, marker_index in enumerate(detail_positions):
+            next_marker = detail_positions[part_index + 1] if part_index + 1 < len(detail_positions) else len(section)
+            part_blocks = section[marker_index:next_marker]
+            detail_type = detail_type_for(part_blocks[0].text)
+            if not detail_type:
+                continue
+            field_chunks.append(
+                {
+                    "chunk_id": f"field_{token}_{detail_type}_{part_index + 1}",
+                    "page_number": part_blocks[0].page,
+                    "page_start": part_blocks[0].page,
+                    "page_end": part_blocks[-1].page,
+                    "block_type": "field_detail_part",
+                    "field_code": field_code,
+                    "field_name": values["field_name"],
+                    "field_english_name": values["field_english_name"],
+                    "detail_type": detail_type,
+                    "parent_chunk_id": parent_chunk_id,
+                    "content": " ".join(" ".join(block.text.split()) for block in part_blocks),
+                }
+            )
+    return field_chunks
+
+
 def parse_pdf(pdf_path: Path, *, max_pages: int | None, use_ocr: bool, force_ocr: bool, language: str, chunk_size: int, overlap: int) -> dict:
     document = fitz.open(pdf_path)
     page_limit = min(len(document), max_pages) if max_pages else len(document)
@@ -128,6 +291,7 @@ def parse_pdf(pdf_path: Path, *, max_pages: int | None, use_ocr: bool, force_ocr
             }
         )
 
+    field_chunks = build_field_chunks(layout_blocks)
     return {
         "source": str(pdf_path),
         "total_pages": len(document),
@@ -137,6 +301,7 @@ def parse_pdf(pdf_path: Path, *, max_pages: int | None, use_ocr: bool, force_ocr
         "page_decisions": page_decisions,
         "layout_blocks": [asdict(block) for block in layout_blocks],
         "chunks": build_chunks(layout_blocks, chunk_size, overlap),
+        "field_chunks": field_chunks,
     }
 
 
@@ -158,7 +323,22 @@ def ingest_pdf(pdf_path: Path,*,document_id: str,filename: str,settings: Setting
     if report_dir:
         report_path = write_pdf_chunk_report(report, report_dir, document_id)
 
-    chunks = [chunk for chunk in report["chunks"] if chunk["content"].strip()]
+    chunks = [
+        {
+            **chunk,
+            "page_start": chunk["page_number"],
+            "page_end": chunk["page_number"],
+            "block_type": "general_text",
+            "field_code": "",
+            "field_name": "",
+            "field_english_name": "",
+            "detail_type": "",
+            "parent_chunk_id": "",
+        }
+        for chunk in report["chunks"]
+        if chunk["content"].strip()
+    ]
+    chunks.extend(chunk for chunk in report["field_chunks"] if chunk["content"].strip())
     if not chunks:
         raise RagServiceError("No readable text was found in this PDF.", 400)
 
@@ -175,7 +355,15 @@ def ingest_pdf(pdf_path: Path,*,document_id: str,filename: str,settings: Setting
                     "url": "",
                     "title": filename,
                     "page_number": chunk["page_number"],
+                    "page_start": chunk["page_start"],
+                    "page_end": chunk["page_end"],
                     "chunk_index": index,
+                    "block_type": chunk["block_type"],
+                    "field_code": chunk["field_code"],
+                    "field_name": chunk["field_name"],
+                    "field_english_name": chunk["field_english_name"],
+                    "detail_type": chunk["detail_type"],
+                    "parent_chunk_id": chunk["parent_chunk_id"],
                     "content": content,
                     "created_at": datetime.now(timezone.utc).isoformat(),
                 },
@@ -191,6 +379,7 @@ def ingest_pdf(pdf_path: Path,*,document_id: str,filename: str,settings: Setting
     return {
         "source_type": "pdf",
         "chunk_count": len(chunks),
+        "field_chunk_count": len(report["field_chunks"]),
         "processed_pages": report["processed_pages"],
         "ocr_pages": report["ocr_pages"],
         "chunk_report_path": str(report_path) if report_path else None,

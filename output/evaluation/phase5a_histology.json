@@ -1,0 +1,191 @@
+{
+  "document_id": "0efb253c4feb4c6ba161f0363f288f71",
+  "search_mode": "hybrid",
+  "query_rewrite": false,
+  "evaluation": {
+    "metrics": {
+      "hit_at_5": 1.0,
+      "hit_at_10": 1.0,
+      "mrr": 1.0
+    },
+    "cases": [
+      {
+        "id": "field_basic_histology_001",
+        "type": "field_basic",
+        "hit_at_5": true,
+        "hit_at_10": true,
+        "mrr": 1.0,
+        "top_chunks": [
+          {
+            "chunk_id": "field_2_8_summary",
+            "page_number": 13,
+            "block_type": "field_summary",
+            "field_code": "2.8",
+            "detail_type": "",
+            "score": null,
+            "rrf_score": null,
+            "rerank_score": null
+          }
+        ]
+      },
+      {
+        "id": "field_detail_histology_001",
+        "type": "field_detail",
+        "hit_at_5": true,
+        "hit_at_10": true,
+        "mrr": 1.0,
+        "top_chunks": [
+          {
+            "chunk_id": "field_2_8_summary",
+            "page_number": 13,
+            "block_type": "field_summary",
+            "field_code": "2.8",
+            "detail_type": "",
+            "score": null,
+            "rrf_score": null,
+            "rerank_score": null
+          },
+          {
+            "chunk_id": "field_2_8_detail_parent",
+            "page_number": 98,
+            "block_type": "field_detail_parent",
+            "field_code": "2.8",
+            "detail_type": "",
+            "score": null,
+            "rrf_score": null,
+            "rerank_score": null
+          },
+          {
+            "chunk_id": "field_2_8_description_1",
+            "page_number": 98,
+            "block_type": "field_detail_part",
+            "field_code": "2.8",
+            "detail_type": "description",
+            "score": null,
+            "rrf_score": null,
+            "rerank_score": null
+          },
+          {
+            "chunk_id": "field_2_8_purpose_2",
+            "page_number": 98,
+            "block_type": "field_detail_part",
+            "field_code": "2.8",
+            "detail_type": "purpose",
+            "score": null,
+            "rrf_score": null,
+            "rerank_score": null
+          },
+          {
+            "chunk_id": "field_2_8_coding_instruction_3",
+            "page_number": 98,
+            "block_type": "field_detail_part",
+            "field_code": "2.8",
+            "detail_type": "coding_instruction",
+            "score": null,
+            "rrf_score": null,
+            "rerank_score": null
+          },
+          {
+            "chunk_id": "field_2_8_note_4",
+            "page_number": 98,
+            "block_type": "field_detail_part",
+            "field_code": "2.8",
+            "detail_type": "note",
+            "score": null,
+            "rrf_score": null,
+            "rerank_score": null
+          },
+          {
+            "chunk_id": "field_2_8_exception_5",
+            "page_number": 98,
+            "block_type": "field_detail_part",
+            "field_code": "2.8",
+            "detail_type": "exception",
+            "score": null,
+            "rrf_score": null,
+            "rerank_score": null
+          }
+        ]
+      },
+      {
+        "id": "field_full_histology_001",
+        "type": "field_full",
+        "hit_at_5": true,
+        "hit_at_10": true,
+        "mrr": 1.0,
+        "top_chunks": [
+          {
+            "chunk_id": "field_2_8_summary",
+            "page_number": 13,
+            "block_type": "field_summary",
+            "field_code": "2.8",
+            "detail_type": "",
+            "score": null,
+            "rrf_score": null,
+            "rerank_score": null
+          },
+          {
+            "chunk_id": "field_2_8_detail_parent",
+            "page_number": 98,
+            "block_type": "field_detail_parent",
+            "field_code": "2.8",
+            "detail_type": "",
+            "score": null,
+            "rrf_score": null,
+            "rerank_score": null
+          },
+          {
+            "chunk_id": "field_2_8_description_1",
+            "page_number": 98,
+            "block_type": "field_detail_part",
+            "field_code": "2.8",
+            "detail_type": "description",
+            "score": null,
+            "rrf_score": null,
+            "rerank_score": null
+          },
+          {
+            "chunk_id": "field_2_8_purpose_2",
+            "page_number": 98,
+            "block_type": "field_detail_part",
+            "field_code": "2.8",
+            "detail_type": "purpose",
+            "score": null,
+            "rrf_score": null,
+            "rerank_score": null
+          },
+          {
+            "chunk_id": "field_2_8_coding_instruction_3",
+            "page_number": 98,
+            "block_type": "field_detail_part",
+            "field_code": "2.8",
+            "detail_type": "coding_instruction",
+            "score": null,
+            "rrf_score": null,
+            "rerank_score": null
+          },
+          {
+            "chunk_id": "field_2_8_note_4",
+            "page_number": 98,
+            "block_type": "field_detail_part",
+            "field_code": "2.8",
+            "detail_type": "note",
+            "score": null,
+            "rrf_score": null,
+            "rerank_score": null
+          },
+          {
+            "chunk_id": "field_2_8_exception_5",
+            "page_number": 98,
+            "block_type": "field_detail_part",
+            "field_code": "2.8",
+            "detail_type": "exception",
+            "score": null,
+            "rrf_score": null,
+            "rerank_score": null
+          }
+        ]
+      }
+    ]
+  }
+}

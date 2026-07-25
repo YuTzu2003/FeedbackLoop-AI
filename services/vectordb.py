@@ -14,7 +14,15 @@ RAG_PROPERTIES = [
     Property(name="url", data_type=DataType.TEXT),
     Property(name="title", data_type=DataType.TEXT),
     Property(name="page_number", data_type=DataType.INT),
+    Property(name="page_start", data_type=DataType.INT),
+    Property(name="page_end", data_type=DataType.INT),
     Property(name="chunk_index", data_type=DataType.INT),
+    Property(name="block_type", data_type=DataType.TEXT),
+    Property(name="field_code", data_type=DataType.TEXT),
+    Property(name="field_name", data_type=DataType.TEXT),
+    Property(name="field_english_name", data_type=DataType.TEXT),
+    Property(name="detail_type", data_type=DataType.TEXT),
+    Property(name="parent_chunk_id", data_type=DataType.TEXT),
     Property(name="content", data_type=DataType.TEXT),
     Property(name="created_at", data_type=DataType.DATE),]
 

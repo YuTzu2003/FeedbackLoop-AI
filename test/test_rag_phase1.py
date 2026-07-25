@@ -27,7 +27,7 @@ def rag_settings() -> Settings:
 
 
 class RetrievalPhase1Tests(unittest.TestCase):
-    def test_fixed_manual_evaluation_data_has_five_cases(self):
+    def test_fixed_manual_evaluation_data_has_eight_cases(self):
         cases = load_cases(Path("test/rag_manual_evaluation.json"))
         results = {
             "field_001": [{"page_number": 5, "content": "Name 病人 200"}],
@@ -38,11 +38,18 @@ class RetrievalPhase1Tests(unittest.TestCase):
                 {"page_number": 17, "content": "Non-gastric GIST"},
             ],
             "unanswerable_001": [],
+            "field_basic_histology_001": [{"field_code": "2.8", "content": "Histology 5 文字"}],
+            "field_detail_histology_001": [
+                {"field_code": "2.8", "content": "原發腫瘤細胞 收錄目的 ICD-O-3 M-code Solid Tumor coding rules"}
+            ],
+            "field_full_histology_001": [
+                {"field_code": "2.8", "content": "Histology 欄位長度 2.8 欄位敘述 收錄目的 編碼指引"}
+            ],
         }
 
         report = evaluate_cases(cases, results)
 
-        self.assertEqual(len(cases), 5)
+        self.assertEqual(len(cases), 8)
         self.assertEqual(report["metrics"], {"hit_at_5": 1.0, "hit_at_10": 1.0, "mrr": 1.0})
 
     def test_load_settings_reads_retrieval_limits_from_environment(self):
@@ -112,7 +119,7 @@ class RetrievalPhase1Tests(unittest.TestCase):
             patch("pipeline.retrieve_answer.rag_collection", return_value=collection),
             patch("pipeline.retrieve_answer.embedding", return_value=[0.1, 0.2]),
         ):
-            chunks = retrieve_answer.retrieve_chunks("欄位 1.3 的 Name", "pdf-1", rag_settings(), llm_settings(), "hybrid")
+            chunks = retrieve_answer.retrieve_chunks("4.2.1.2 代碼 3", "pdf-1", rag_settings(), llm_settings(), "hybrid")
 
         self.assertEqual(len(collection.calls), 4)
         self.assertTrue(all(call["limit"] == 20 for call in collection.calls))

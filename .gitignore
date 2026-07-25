@@ -11,6 +11,7 @@ tasks/
 *.json
 !test/rag_manual_evaluation.json
 !output/evaluation/baseline.json
+!output/evaluation/phase5a_histology.json
 
 # Virtual environments
 .venv

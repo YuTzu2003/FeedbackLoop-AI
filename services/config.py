@@ -19,6 +19,9 @@ class Settings:
     rrf_candidate_top_k: int = 30
     rerank_top_k: int = 8
     final_context_top_k: int = 8
+    field_summary_candidate_k: int = 8
+    field_detail_candidate_k: int = 20
+    general_candidate_k: int = 12
 
 
 def load_settings() -> Settings:
@@ -32,4 +35,7 @@ def load_settings() -> Settings:
         rrf_candidate_top_k=int(os.getenv("RAG_RRF_CANDIDATE_TOP_K", "30")),
         rerank_top_k=int(os.getenv("RAG_RERANK_TOP_K", "8")),
         final_context_top_k=int(os.getenv("RAG_FINAL_CONTEXT_TOP_K", "8")),
+        field_summary_candidate_k=int(os.getenv("RAG_FIELD_SUMMARY_CANDIDATE_K", "8")),
+        field_detail_candidate_k=int(os.getenv("RAG_FIELD_DETAIL_CANDIDATE_K", "20")),
+        general_candidate_k=int(os.getenv("RAG_GENERAL_CANDIDATE_K", "12")),
     )
