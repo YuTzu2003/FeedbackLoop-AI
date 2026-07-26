@@ -12,6 +12,7 @@ const urlForm = document.querySelector("#urlForm");
 const urlInput = document.querySelector("#urlInput");
 let notebooks = [];
 let activeNotebookId = null;
+let currentAbortController = null;
 let feedbackHistoryIds = new Set();
 const copyIcon = '<i class="bi bi-copy" aria-hidden="true"></i>';
 
@@ -50,7 +51,14 @@ showUrlBtn.addEventListener("click", () => {
 });
 urlForm.addEventListener("submit", (event) => { event.preventDefault(); uploadUrl(); });
 
-function sendCurrentQuestion() { const question = questionInput.value.trim(); if (question && activeNotebookId && !askButton.disabled) ask(question); }
+function sendCurrentQuestion() { 
+  if (askButton.classList.contains("is-stop-btn")) {
+    if (currentAbortController) currentAbortController.abort();
+    return;
+  }
+  const question = questionInput.value.trim(); 
+  if (question && activeNotebookId && !askButton.disabled) ask(question); 
+}
 
 function renderNotebooks() {
   notebookList.innerHTML = notebooks.length ? notebooks.map((notebook) => {
@@ -110,7 +118,7 @@ async function loadNotebookHistory() {
 }
 
 function renderHistoryItem(item) {
-  return `<div class="message user">${escapeHtml(item.question)}</div>${answerMessage(item.answer, item.question, item.id, item.sources)}`;
+  return `<div class="message user"><div class="user-content">${escapeHtml(item.question)}</div></div>${answerMessage(item.answer, item.question, item.id, item.sources)}`;
 }
 
 async function uploadFile() {
@@ -140,19 +148,51 @@ async function uploadUrl() {
   await selectNotebook(data.notebook_id);
 }
 
+let currentRequestId = null;
+
 async function ask(question) {
+  if (currentAbortController) currentAbortController.abort();
+  currentAbortController = new AbortController();
+  currentRequestId = Math.random().toString(36).substring(2) + Date.now().toString(36);
   conversation.querySelector(".empty-state")?.remove();
-  conversation.innerHTML += '<div class="message user">' + escapeHtml(question) + '</div><div class="message ai loading">正在分析<span>.</span><span>.</span><span>.</span></div>';
+  conversation.innerHTML += '<div class="message user"><div class="user-content">' + escapeHtml(question) + '</div><button class="edit-question-btn" data-edit-question="' + escapeAttribute(question) + '" title="編輯問題"><i class="bi bi-pencil" style="font-size: 14px;"></i></button></div><div class="message ai loading">正在分析<span>.</span><span>.</span><span>.</span></div>';
   conversation.scrollTop = conversation.scrollHeight;
   questionInput.value = "";
-  askButton.disabled = true;
-  const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, notebook_id: activeNotebookId, search_mode: searchMode.value }) });
-  const data = await response.json();
-  conversation.querySelector(".loading")?.remove();
+  askButton.innerHTML = '<i class="bi bi-stop-fill" aria-hidden="true"></i>';
+  askButton.classList.add("is-stop-btn");
   askButton.disabled = false;
-  if (!response.ok) { conversation.innerHTML += '<div class="message ai">' + escapeHtml(data.error) + '</div>'; return; }
-  conversation.innerHTML += answerMessage(data.answer, question, data.history_id, data.sources);
-  conversation.scrollTop = conversation.scrollHeight;
+  try {
+    const response = await fetch("/api/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ question, notebook_id: activeNotebookId, search_mode: searchMode.value, request_id: currentRequestId }), signal: currentAbortController.signal });
+    const data = await response.json();
+    conversation.querySelector(".loading")?.remove();
+    const lastEditBtn = conversation.querySelector(".message.user:last-of-type .edit-question-btn");
+    if (lastEditBtn) lastEditBtn.remove();
+    askButton.innerHTML = '<i class="bi bi-arrow-up" aria-hidden="true"></i>';
+    askButton.classList.remove("is-stop-btn");
+    if (!response.ok) { conversation.innerHTML += '<div class="message ai">' + escapeHtml(data.error) + '</div>'; return; }
+    conversation.innerHTML += answerMessage(data.answer, question, data.history_id, data.sources);
+    conversation.scrollTop = conversation.scrollHeight;
+  } catch (error) {
+    if (error.name === "AbortError") {
+      if (currentRequestId) {
+        fetch("/api/ask/cancel", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request_id: currentRequestId }) }).catch(() => {});
+      }
+      conversation.querySelector(".loading")?.remove();
+      const messages = Array.from(conversation.querySelectorAll(".message.user"));
+      if (messages.length > 0) messages[messages.length - 1].remove();
+      questionInput.value = question;
+    } else {
+      conversation.querySelector(".loading")?.remove();
+      const lastEditBtn = conversation.querySelector(".message.user:last-of-type .edit-question-btn");
+      if (lastEditBtn) lastEditBtn.remove();
+      conversation.innerHTML += '<div class="message ai">連線發生錯誤。</div>';
+    }
+    askButton.innerHTML = '<i class="bi bi-arrow-up" aria-hidden="true"></i>';
+    askButton.classList.remove("is-stop-btn");
+  } finally {
+    currentAbortController = null;
+    currentRequestId = null;
+  }
 }
 
 function answerMessage(answer, question, historyId, sources = ["AI 文字分析"]) {
@@ -161,6 +201,12 @@ function answerMessage(answer, question, historyId, sources = ["AI 文字分析"
 }
 
 conversation.addEventListener("click", async (event) => {
+  const editBtn = event.target.closest(".edit-question-btn");
+  if (editBtn) {
+    if (currentAbortController) currentAbortController.abort();
+    questionInput.focus();
+    return;
+  }
   const copyButton = event.target.closest("[data-copy]");
   if (copyButton) { await navigator.clipboard?.writeText(copyButton.closest(".ai").querySelector(".answer").innerText); copyButton.classList.add("copied"); copyButton.querySelector(".bi").className = "bi bi-check2"; setTimeout(() => { copyButton.classList.remove("copied"); copyButton.querySelector(".bi").className = "bi bi-copy"; }, 1400); return; }
   const scoreButton = event.target.closest("[data-score]");

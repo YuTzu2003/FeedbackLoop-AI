@@ -1,7 +1,5 @@
 from pathlib import Path
-
 from services.notebook_repositories import read_jsonl
-
 
 def find_user_history(data_root: Path | str, user_id: str, history_id: str) -> dict | None:
     root = Path(data_root).resolve()

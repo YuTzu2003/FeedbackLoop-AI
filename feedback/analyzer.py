@@ -1,7 +1,6 @@
 import json
 from services.api import LLMSettings, llm_client
 
-
 def propose_patch(feedback_items: list[dict], preferences: dict, llm_settings: LLMSettings) -> list[dict]:
     evidence = [
         {"question": item["question"], "answer": item["answer"], "note": item["note"]}

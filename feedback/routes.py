@@ -1,5 +1,4 @@
 from flask import Blueprint, current_app, jsonify, render_template, request, session
-
 from feedback.analyzer import propose_patch
 from feedback.history import find_user_history
 from feedback.profile import apply_patch, has_applied_feedback_group, load_profile, rollback_profile, validate_patch
@@ -7,7 +6,6 @@ from feedback.repository import create_feedback, latest_negative_feedback, list_
 from services.auth import login_required
 
 feedback_bp = Blueprint("feedback", __name__)
-
 
 @feedback_bp.get("/feedback")
 @login_required

@@ -3,13 +3,10 @@ from ipaddress import ip_address
 from socket import gethostbyname
 from urllib.parse import urlparse
 from uuid import uuid4
-
 import requests
 from bs4 import BeautifulSoup
-
 from services.config import Settings
 from services.vectordb import CHUNK_OVERLAP, CHUNK_SIZE, RagServiceError, delete_document, index_chunks
-
 
 def validate_public_url(url: str) -> str:
     parsed = urlparse(url)
@@ -22,7 +19,6 @@ def validate_public_url(url: str) -> str:
     if address.is_private or address.is_loopback or address.is_link_local or address.is_reserved:
         raise RagServiceError("Private network URLs are not allowed.", 400)
     return url
-
 
 def load_web_page(url: str) -> dict:
     validate_public_url(url)
@@ -41,7 +37,6 @@ def load_web_page(url: str) -> dict:
         raise RagServiceError("No readable text was found at this URL.", 400)
     return {"url": url, "title": soup.title.get_text(strip=True) if soup.title else url, "content": content}
 
-
 def chunk_text(content: str) -> list[str]:
     text = " ".join(content.split())
     chunks, start = [], 0
@@ -56,7 +51,6 @@ def chunk_text(content: str) -> list[str]:
             break
         start = max(end - CHUNK_OVERLAP, start + 1)
     return chunks
-
 
 def ingest_web_url(url: str, settings: Settings) -> dict:
     page = load_web_page(url)

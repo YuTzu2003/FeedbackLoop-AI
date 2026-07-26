@@ -7,7 +7,6 @@ from services.config import Settings
 from services.vectordb import CHUNK_SIZE, RagServiceError, index_chunks
 
 def spreadsheet_sections(path: Path) -> list[str]:
-    """Use RAGFlow's header/value rows and retain their sheet context."""
     try:
         sheets = pd.read_csv(path, dtype=str, keep_default_na=False) if path.suffix.lower() == ".csv" else pd.read_excel(path, sheet_name=None, dtype=str, keep_default_na=False)
     except (OSError, ValueError, ImportError) as error:

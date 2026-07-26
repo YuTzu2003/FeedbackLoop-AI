@@ -32,6 +32,8 @@ app.config["NOTEBOOK_DATA_ROOT"] = BASE_DIR / "tasks/notebooks"
 app.config["PDF_CHUNK_REPORT_DIR"] = f"{BASE_DIR}/tmp/pdf_chunks"
 app.config["LLM_SETTINGS"] = llm_settings
 notebook_history_log_lock = Lock()
+cancelled_requests = set()
+cancelled_requests_lock = Lock()
 
 logging.basicConfig(level=logging.INFO,format='%(asctime)s | %(levelname)s | %(message)s',datefmt='%Y-%m-%d %H:%M:%S',handlers=[logging.StreamHandler(sys.stdout)])
 werkzeug_logger = logging.getLogger('werkzeug')
@@ -164,10 +166,21 @@ def upload_url():
     return jsonify(notebook_id=notebook["id"], filename=notebook["name"], chunk_count=notebook["chunk_count"])
 
 
+@app.post("/api/ask/cancel")
+@login_required
+def ask_cancel():
+    request_id = (request.json or {}).get("request_id")
+    if request_id:
+        with cancelled_requests_lock:
+            cancelled_requests.add(request_id)
+    return jsonify(status="cancelled")
+
+
 @app.post("/api/ask")
 @login_required
 def ask():
     payload = request.json or {}
+    request_id = payload.get("request_id", "").strip()
     question = payload.get("question", "").strip()
     notebook_id = payload.get("notebook_id", "").strip()
     search_mode = str(payload.get("search_mode") or "near_vector").strip()
@@ -204,6 +217,12 @@ def ask():
             sources = ["AI 文字分析"]
     except RagServiceError as error:
         return jsonify(error=str(error)), error.status_code
+
+    if request_id:
+        with cancelled_requests_lock:
+            if request_id in cancelled_requests:
+                cancelled_requests.remove(request_id)
+                return jsonify(error="Cancelled by user"), 499
 
     record = {
         "id": uuid4().hex,

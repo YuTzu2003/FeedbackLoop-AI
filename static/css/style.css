@@ -1045,3 +1045,39 @@ body {
         max-height: 180px
     }
 }
+
+.message.user {
+    position: relative;
+}
+
+.edit-question-btn {
+    position: absolute;
+    top: 50%;
+    left: -36px;
+    transform: translateY(-50%);
+    opacity: 0;
+    transition: opacity 0.2s ease, background 0.2s, color 0.2s;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 50% !important;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    color: var(--muted) !important;
+    cursor: pointer;
+}
+
+.message.user:hover .edit-question-btn {
+    opacity: 1;
+}
+
+.edit-question-btn:hover {
+    background: #f1f3f2 !important;
+    color: var(--ink) !important;
+}
+
+.is-stop-btn {
+    background: #c54545 !important;
+}
