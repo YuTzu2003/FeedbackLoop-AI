@@ -18,7 +18,7 @@ from pipeline.load_pdf import write_pdf_chunk_report
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-class WeaviateConnectionTests(unittest.TestCase):
+class ElasticsearchConnectionTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = TemporaryDirectory()
         self.original_notebook_data_root = app.app.config["NOTEBOOK_DATA_ROOT"]
@@ -61,10 +61,10 @@ class WeaviateConnectionTests(unittest.TestCase):
         if self.get_notebook(notebook_id, owner_user_id):
             del self.notebooks[notebook_id]
 
-    @patch("app.weaviate_status", return_value={"ready": True, "live": True})
+    @patch("app.elasticsearch_status", return_value={"ready": True, "live": True})
     def test_status_uses_the_rag_service(self, status):
 
-        response = self.client.get("/api/weaviate/status")
+        response = self.client.get("/api/elasticsearch/status")
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json, {"ready": True, "live": True})
@@ -92,7 +92,7 @@ class WeaviateConnectionTests(unittest.TestCase):
         self.assertEqual(response.status_code, 404)
 
     def test_connection_page_uses_the_correct_template(self):
-        self.assertIn("Weaviate", self.client.get("/connection").get_data(as_text=True))
+        self.assertIn("Elasticsearch", self.client.get("/connection").get_data(as_text=True))
 
     @patch("feedback.routes.list_feedback", return_value=[{"score": "good", "question": "Q", "answer": "A", "note": "", "created_at": "2026-01-01T00:00:00+00:00"}])
     def test_feedback_page_and_api_use_mssql_records(self, list_feedback):
@@ -105,7 +105,8 @@ class WeaviateConnectionTests(unittest.TestCase):
         self.assertEqual(response.json["items"][0]["score"], "good")
         list_feedback.assert_called_once_with("test-id")
 
-    def test_upload_creates_a_notebook(self):
+    @patch("app.ingest_document", return_value={"source_type": "spreadsheet", "chunk_count": 1})
+    def test_upload_creates_a_notebook(self, ingest):
         response = self.client.post("/api/upload", data={"file": (BytesIO(b"name,value\na,1\n"), "report.csv")})
 
         self.assertEqual(response.status_code, 200)
@@ -115,6 +116,7 @@ class WeaviateConnectionTests(unittest.TestCase):
         self.assertEqual(notebook["owner_user_id"], "test-id")
         notebook_dir = notebook_data_dir(app.app.config["NOTEBOOK_DATA_ROOT"], "test-id", notebook["id"])
         self.assertTrue((notebook_dir / notebook["stored_filename"]).exists())
+        ingest.assert_called_once()
 
     def test_sql_notebook_uses_the_new_column_names(self):
         notebook = _notebook_from_row(
@@ -134,7 +136,7 @@ class WeaviateConnectionTests(unittest.TestCase):
         self.assertEqual(notebook["stored_filename"], "book-1_report.csv")
         self.assertEqual(notebook["owner_user_id"], "7")
 
-    @patch("app.ingest_pdf", return_value={"source_type": "pdf", "chunk_count": 2, "processed_pages": 1, "ocr_pages": 0})
+    @patch("app.ingest_document", return_value={"source_type": "pdf", "chunk_count": 2, "processed_pages": 1, "ocr_pages": 0})
     def test_pdf_upload_indexes_chunks_before_creating_notebook(self, ingest):
         response = self.client.post("/api/upload", data={"file": (BytesIO(b"%PDF-1.4"), "report.pdf")})
 
