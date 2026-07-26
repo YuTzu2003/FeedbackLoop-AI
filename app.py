@@ -8,14 +8,15 @@ import sys
 from flask import Flask, jsonify, render_template, request, session
 from pipeline.retrieve_answer import answer_from_chunks, answer_from_history, retrieve_chunks
 from pipeline.load_url import ingest_web_url
-from pipeline.load_pdf import ingest_pdf
+from pipeline.load_document import ingest_document
 from services.config import load_settings
 from services.api import load_llm_settings, get_system_prompt
-from services.vectordb import RagServiceError, delete_document, weaviate_status
+from services.vectordb import RagServiceError, delete_document, elasticsearch_status
 from services.notebook_repositories import (append_jsonl,delete_notebook_data,notebook_data_dir,notebook_history,notebook_history_path,save_upload, create_notebook, delete_notebook as delete_notebook_record, get_notebook, list_notebooks as list_notebook_records)
 import os
 from services.auth import auth_bp, login_required, admin_required
-from services.feedback import feedback_bp
+from feedback import feedback_bp
+from feedback.profile import load_profile, preferences_instruction
 
 load_dotenv()
 settings = load_settings()
@@ -29,6 +30,7 @@ Path(HISTORY_DIR).mkdir(parents=True, exist_ok=True)
 app.config["MAX_CONTENT_LENGTH"] = 20 * 1024 * 1024
 app.config["NOTEBOOK_DATA_ROOT"] = BASE_DIR / "tasks/notebooks"
 app.config["PDF_CHUNK_REPORT_DIR"] = f"{BASE_DIR}/tmp/pdf_chunks"
+app.config["LLM_SETTINGS"] = llm_settings
 notebook_history_log_lock = Lock()
 
 logging.basicConfig(level=logging.INFO,format='%(asctime)s | %(levelname)s | %(message)s',datefmt='%Y-%m-%d %H:%M:%S',handlers=[logging.StreamHandler(sys.stdout)])
@@ -86,7 +88,7 @@ def delete_notebook_api(notebook_id: str):
     try:
         delete_document(notebook_id, settings)
     except RagServiceError as e:
-        app.logger.warning(f"Failed to delete document from Weaviate: {e}")
+        app.logger.warning(f"Failed to delete document from Elasticsearch: {e}")
         
     delete_notebook_data(app.config["NOTEBOOK_DATA_ROOT"], str(session["id"]), notebook_id)
     delete_notebook_record(notebook_id, str(session["id"]))
@@ -95,14 +97,14 @@ def delete_notebook_api(notebook_id: str):
 
 
 
-@app.get("/api/weaviate/status")
+@app.get("/api/elasticsearch/status")
 @login_required
-def check_weaviate_status():
+def check_elasticsearch_status():
     try:
-        return jsonify(weaviate_status(settings))
+        return jsonify(elasticsearch_status(settings))
     except Exception:
-        app.logger.exception("Weaviate connection check failed")
-        return jsonify(ready=False, live=False, error="無法連線至 Weaviate。"), 503
+        app.logger.exception("Elasticsearch connection check failed")
+        return jsonify(ready=False, live=False, error="無法連線至 Elasticsearch。"), 503
 
 
 @app.post("/api/upload")
@@ -116,10 +118,10 @@ def upload():
         notebook = save_upload(file, current_notebook_dir(notebook_id), notebook_id)
     except ValueError as error:
         return jsonify(error=str(error)), 400
-    if Path(notebook["stored_filename"]).suffix.lower() == ".pdf":
+    if Path(notebook["stored_filename"]).suffix.lower() in {".pdf", ".csv", ".xls", ".xlsx"}:
         try:
             notebook.update(
-                ingest_pdf(
+                ingest_document(
                     current_notebook_dir(notebook["id"]) / notebook["stored_filename"],
                     document_id=notebook["id"],
                     filename=notebook["name"],
@@ -178,12 +180,14 @@ def ask():
     notebook = current_user_notebook(notebook_id)
     if not notebook:
         return jsonify(error="找不到此筆記本。"), 404
+    profile = load_profile(app.config["NOTEBOOK_DATA_ROOT"], str(session["id"]))
+    personal_instruction = preferences_instruction(profile)
     try:
-        if notebook.get("source_type") in {"web", "pdf"}:
+        if notebook.get("source_type") in {"web", "pdf", "spreadsheet"}:
             chunks = retrieve_chunks(question, notebook_id, settings, llm_settings, search_mode)
             if not chunks:
                 return jsonify(error="找不到此網址來源的相關內容。"), 404
-            answer = answer_from_chunks(question, chunks, llm_settings)
+            answer = answer_from_chunks(question, chunks, llm_settings, personal_instruction)
             sources = [
                 {
                     key: item.get(key)
@@ -192,7 +196,7 @@ def ask():
                 for item in chunks
             ]
         else:
-            messages = [get_system_prompt()]
+            messages = [get_system_prompt(personal_instruction)]
             for item in reversed(notebook_history(current_notebook_history_path(notebook_id), notebook_id)[:3]):
                 messages.extend([{"role": "user", "content": item["question"]}, {"role": "assistant", "content": item["answer"]}])
             messages.append({"role": "user", "content": question})

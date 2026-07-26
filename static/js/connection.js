@@ -3,7 +3,7 @@ const message = document.querySelector("#connectionMessage");
 refreshButton.addEventListener("click", loadStatus);
 async function loadStatus() {
     refreshButton.disabled = true;
-    const response = await fetch("/api/weaviate/status"); 
+    const response = await fetch("/api/elasticsearch/status");
     const data = await response.json(); 
     document.querySelector("#ready").textContent = data.ready ? "已就緒" : "未就緒"; 
     document.querySelector("#live").textContent = data.live ? "正常" : "未連線"; 
