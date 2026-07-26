@@ -195,9 +195,43 @@ async function ask(question) {
   }
 }
 
+function groupSources(sources) {
+  if (sources.length > 0 && typeof sources[0] === "string") {
+    return sources.map(escapeHtml).join("、");
+  }
+  const grouped = {};
+  for (const source of sources) {
+    const key = source.title || source.url || "未知來源";
+    if (!grouped[key]) {
+      grouped[key] = {
+        title: source.title,
+        url: source.url,
+        type: source.source_type,
+        pages: new Set()
+      };
+    }
+    if (source.page_number) grouped[key].pages.add(source.page_number);
+  }
+
+  const result = [];
+  for (const key in grouped) {
+    const group = grouped[key];
+    if (group.type === "pdf") {
+      const pagesArray = Array.from(group.pages).sort((a, b) => a - b);
+      const pagesStr = pagesArray.length > 0 ? ` (第 ${pagesArray.join(", ")} 頁)` : "";
+      result.push(escapeHtml(`${group.title}${pagesStr}`));
+    } else if (group.type === "web" && group.url) {
+      result.push(`<a href="${escapeAttribute(group.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(group.title)}</a>`);
+    } else {
+      result.push(escapeHtml(group.title));
+    }
+  }
+  return result.join("、");
+}
+
 function answerMessage(answer, question, historyId, sources = ["AI 文字分析"]) {
   const feedback = feedbackHistoryIds.has(historyId) ? '<div class="feedback"><b>✓ 已回饋</b></div>' : '<div class="feedback" data-history-id="' + escapeAttribute(historyId) + '" data-question="' + escapeAttribute(question) + '" data-answer="' + escapeAttribute(answer) + '"><button class="feedback-icon" data-score="good" aria-label="有幫助" title="有幫助"><i class="bi bi-hand-thumbs-up" aria-hidden="true"></i></button><button class="feedback-icon" data-score="bad" aria-label="需要改善" title="需要改善"><i class="bi bi-hand-thumbs-down" aria-hidden="true"></i></button></div>';
-  return '<div class="message ai"><div class="answer markdown-body">' + renderAnswer(answer) + '</div><div class="answer-actions">' + feedback + '<button class="icon-button" data-copy aria-label="複製回答" title="複製回答">' + copyIcon + '</button></div><div class="sources">參考：' + sources.map(escapeHtml).join("、") + '</div></div>';
+  return '<div class="message ai"><div class="answer markdown-body">' + renderAnswer(answer) + '</div><div class="answer-actions">' + feedback + '<button class="icon-button" data-copy aria-label="複製回答" title="複製回答">' + copyIcon + '</button></div><div class="sources">參考：' + groupSources(sources) + '</div></div>';
 }
 
 conversation.addEventListener("click", async (event) => {
@@ -239,17 +273,7 @@ function renderAnswer(answer) {
 }
 
 function escapeHtml(value) {
-  if (typeof value === "object" && value) return formatSource(value);
   const element = document.createElement("div"); element.textContent = value; return element.innerHTML;
 }
 function escapeAttribute(value) { return escapeHtml(value).replace(/"/g, "&quot;"); }
-function formatSource(source) {
-  if (source.source_type === "pdf") {
-    const page = source.page_number ? `第 ${source.page_number} 頁` : "頁碼不明";
-    const score = source.score == null ? "" : ` · ${(source.score * 100).toFixed(0)}%`;
-    return escapeHtml(`${source.title} · ${page}${score}`);
-  }
-  const label = `${source.title} · chunk ${source.chunk_index} · ${(source.score * 100).toFixed(0)}%`;
-  return `<a href="${escapeAttribute(source.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(label)}</a>`;
-}
 loadNotebooks();

@@ -1,25 +1,18 @@
-"""Elasticsearch-backed document storage for the Flask RAG application."""
-
 from __future__ import annotations
-
 import base64
 import json
 from typing import Any
-
 import openai
 import requests
-
 from services.config import Settings
 
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 100
 
-
 class RagServiceError(Exception):
     def __init__(self, message: str, status_code: int):
         super().__init__(message)
         self.status_code = status_code
-
 
 def _headers(settings: Settings) -> dict[str, str]:
     headers = {"Content-Type": "application/json"}
@@ -31,10 +24,8 @@ def _headers(settings: Settings) -> dict[str, str]:
         headers["Authorization"] = f"Basic {encoded_auth}"
     return headers
 
-
 def _url(settings: Settings, path: str) -> str:
     return f"{settings.elasticsearch_url.rstrip('/')}/{path.lstrip('/')}"
-
 
 def embedding(text: str, settings: Settings) -> list[float]:
     client = openai.OpenAI(base_url=settings.embedding_base_url, api_key="EMPTY", timeout=settings.embedding_timeout)
@@ -45,7 +36,6 @@ def embedding(text: str, settings: Settings) -> list[float]:
     if not vector:
         raise RagServiceError("Embedding service returned an empty vector.", 503)
     return vector
-
 
 def ensure_index(settings: Settings) -> None:
     mapping = {
@@ -82,7 +72,6 @@ def ensure_index(settings: Settings) -> None:
     except requests.RequestException as error:
         raise RagServiceError("Elasticsearch service is unavailable.", 503) from error
 
-
 def elasticsearch_status(settings: Settings) -> dict[str, bool]:
     try:
         response = requests.get(_url(settings, "_cluster/health"), headers=_headers(settings), timeout=5)
@@ -90,7 +79,6 @@ def elasticsearch_status(settings: Settings) -> dict[str, bool]:
         return {"ready": True, "live": True}
     except requests.RequestException:
         return {"ready": False, "live": False}
-
 
 def index_chunks(document_id: str, chunks: list[dict[str, Any]], settings: Settings) -> None:
     ensure_index(settings)
@@ -107,7 +95,6 @@ def index_chunks(document_id: str, chunks: list[dict[str, Any]], settings: Setti
     except requests.RequestException as error:
         raise RagServiceError("Could not index document chunks in Elasticsearch.", 503) from error
 
-
 def delete_document(document_id: str, settings: Settings) -> None:
     query = {"query": {"term": {"document_id": document_id}}}
     try:
@@ -116,7 +103,6 @@ def delete_document(document_id: str, settings: Settings) -> None:
             response.raise_for_status()
     except requests.RequestException as error:
         raise RagServiceError("Could not delete document chunks from Elasticsearch.", 503) from error
-
 
 def search_chunks(query: str, document_id: str, settings: Settings, *, limit: int, hybrid: bool, block_types: tuple[str, ...] = ()) -> list[dict[str, Any]]:
     filters: list[dict[str, Any]] = [{"term": {"document_id": document_id}}]
