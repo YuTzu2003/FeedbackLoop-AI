@@ -125,3 +125,22 @@ def search_chunks(query: str, document_id: str, settings: Settings, *, limit: in
     except requests.RequestException as error:
         raise RagServiceError("Could not retrieve document chunks from Elasticsearch.", 503) from error
     return [{"uuid": hit["_id"], **hit["_source"], "score": hit.get("_score", 0.0)} for hit in response.json().get("hits", {}).get("hits", [])]
+
+
+def find_related_chunks(document_id: str, parent_chunk_ids: set[str], settings: Settings) -> list[dict[str, Any]]:
+    if not parent_chunk_ids:
+        return []
+    body = {
+        "size": 100,
+        "query": {"bool": {"filter": [
+            {"term": {"document_id": document_id}},
+            {"terms": {"parent_chunk_id": sorted(parent_chunk_ids)}},
+        ]}},
+        "sort": [{"chunk_index": "asc"}],
+    }
+    try:
+        response = requests.post(_url(settings, f"{settings.elasticsearch_index}/_search"), headers=_headers(settings), json=body, timeout=30)
+        response.raise_for_status()
+    except requests.RequestException as error:
+        raise RagServiceError("Could not load related table chunks from Elasticsearch.", 503) from error
+    return [{"uuid": hit["_id"], **hit["_source"], "score": hit.get("_score", 0.0)} for hit in response.json().get("hits", {}).get("hits", [])]

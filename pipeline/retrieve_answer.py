@@ -6,7 +6,7 @@ import openai
 import requests
 from services.api import LLMSettings, get_rag_prompt, llm_client
 from services.config import Settings
-from services.vectordb import RagServiceError, search_chunks
+from services.vectordb import RagServiceError, find_related_chunks, search_chunks
 
 def unique_queries(queries: list[str]) -> list[str]:
     seen: set[str] = set()
@@ -77,7 +77,10 @@ def retrieve_chunks(question: str, document_id: str, settings: Settings, llm_set
     queries = build_search_queries(question, llm_settings)
     groups = [search_chunks(query, document_id, settings, limit=settings.retrieval_top_k, hybrid=search_mode == "hybrid") for query in queries]
     candidates = reciprocal_rank_fusion(groups)[:settings.rrf_candidate_top_k]
-    return rerank_documents(question, candidates, settings)[:settings.final_context_top_k]
+    selected = rerank_documents(question, candidates, settings)[:settings.final_context_top_k]
+    table_ids = {str(chunk["parent_chunk_id"]) for chunk in selected if chunk.get("parent_chunk_id")}
+    related = find_related_chunks(document_id, table_ids, settings)
+    return list({str(chunk.get("uuid") or chunk.get("chunk_id")): chunk for chunk in [*selected, *related]}.values())
 
 def answer_from_chunks(question: str, chunks: list[dict], llm_settings: LLMSettings, personal_instruction: str = "") -> str:
     contexts = "\n\n".join(f"[{item.get('title', '')} | {item.get('url', '')}]\n{item['content']}" for item in chunks)

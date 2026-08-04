@@ -4,17 +4,46 @@ import os
 from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
+import camelot
 from pypdf import PdfReader
 from services.config import Settings
 from services.vectordb import RagServiceError, index_chunks
 
-def ragflow_plain_sections(pdf_path: Path) -> list[dict]:
-    """The RAGFlow PlainParser behavior: extract each page into text lines."""
-    try:
-        reader = PdfReader(str(pdf_path))
-    except Exception as error:
-        raise RagServiceError("PDF parsing failed.", 400) from error
+def _markdown_table(rows: list[list[str]]) -> str:
+    escaped_rows = [[cell.replace("|", "\\|").replace("\n", "<br>") for cell in row] for row in rows]
+    return "\n".join(
+        "| " + " | ".join(row) + " |"
+        for row in (escaped_rows[0], ["---"] * len(escaped_rows[0]), *escaped_rows[1:]))
 
+def camelot_table_sections(pdf_path: Path) -> list[dict]:
+    tables = camelot.read_pdf(str(pdf_path), pages="all", flavor="hybrid")
+    sections: list[dict] = []
+    previous_rows: list[list[str]] | None = None
+    previous_page: int | None = None
+    table_start_page: int | None = None
+    for table in tables:
+        rows = [[str(value).strip() for value in row] for row in table.df.fillna("").values.tolist()]
+        if not rows:
+            continue
+        page_number = int(table.page)
+        same_header = bool(previous_rows and previous_rows[0] == rows[0] and any(rows[0]))
+        if previous_rows and previous_page == page_number - 1 and same_header:
+            previous_rows.extend(rows[1:])
+            previous_page = page_number
+            continue
+        if previous_rows:
+            sections.append({
+                "page_number": table_start_page,
+                "page_end": previous_page,
+                "rows": previous_rows,
+            })
+        previous_rows, previous_page, table_start_page = rows, page_number, page_number
+    if previous_rows:
+        sections.append({"page_number": table_start_page, "page_end": previous_page, "rows": previous_rows})
+    return sections
+
+def ragflow_plain_sections(pdf_path: Path) -> list[dict]:
+    reader = PdfReader(str(pdf_path))
     sections = []
     for page_number, page in enumerate(reader.pages, start=1):
         try:
@@ -24,25 +53,19 @@ def ragflow_plain_sections(pdf_path: Path) -> list[dict]:
         sections.extend({"page_number": page_number, "content": line.strip()} for line in text.splitlines() if line.strip())
     return sections
 
-
-def _token_count(text: str) -> int:
-    # RAGFlow merges by tokens; whitespace words are a safe local approximation
-    # that does not require its Infinity tokenizer runtime.
-    return len(text.split())
-
-
 def ragflow_naive_merge(sections: list[dict], chunk_token_num: int) -> list[dict]:
-    """Merge consecutive PlainParser sections using RAGFlow naive chunk semantics."""
     chunks, current, token_count = [], [], 0
     for section in sections:
         content = section["content"]
-        section_tokens = _token_count(content)
+        section_tokens = len(content.split())
         if current and token_count + section_tokens > chunk_token_num:
             chunks.append({
                 "page_number": current[0]["page_number"],
                 "page_start": current[0]["page_number"],
                 "page_end": current[-1]["page_number"],
                 "content": "\n".join(item["content"] for item in current),
+                "block_type": "general_text",
+                "parent_chunk_id": "",
             })
             current, token_count = [], 0
         current.append(section)
@@ -53,7 +76,34 @@ def ragflow_naive_merge(sections: list[dict], chunk_token_num: int) -> list[dict
             "page_start": current[0]["page_number"],
             "page_end": current[-1]["page_number"],
             "content": "\n".join(item["content"] for item in current),
+            "block_type": "general_text",
+            "parent_chunk_id": "",
         })
+    return chunks
+
+def table_chunks(table: dict, table_id: str, chunk_token_num: int) -> list[dict]:
+    rows = table["rows"]
+    header = rows[0]
+    metadata = {key: table[key] for key in ("page_number", "page_end")}
+    chunks, current = [], [header]
+    token_count = len(_markdown_table(current).split())
+    for row in rows[1:]:
+        row_tokens = len(" ".join(row).split())
+        if len(current) > 1 and token_count + row_tokens > chunk_token_num:
+            chunks.append({**metadata, "content": _markdown_table(current), "block_type": "table", "parent_chunk_id": table_id})
+            current, token_count = [header], len(_markdown_table([header]).split())
+        current.append(row)
+        token_count += row_tokens
+    if len(current) > 1 or len(rows) == 1:
+        chunks.append({**metadata, "content": _markdown_table(current), "block_type": "table", "parent_chunk_id": table_id})
+    return chunks
+
+def table_context_chunks(text_sections: list[dict], table: dict, table_id: str, chunk_token_num: int) -> list[dict]:
+    related = [section for section in text_sections if table["page_number"] <= section["page_number"] <= table["page_end"]]
+    chunks = ragflow_naive_merge(related, chunk_token_num)
+    for chunk in chunks:
+        chunk["block_type"] = "table_context"
+        chunk["parent_chunk_id"] = table_id
     return chunks
 
 
@@ -61,16 +111,20 @@ def parse_pdf(pdf_path: Path, *, chunk_token_num: int | None = None) -> dict:
     token_limit = chunk_token_num or int(os.getenv("RAG_CHUNK_TOKEN_NUM", "512"))
     if token_limit <= 0:
         raise ValueError("RAG_CHUNK_TOKEN_NUM must be positive.")
-    sections = ragflow_plain_sections(pdf_path)
-    return {"source": str(pdf_path), "sections": sections, "chunks": ragflow_naive_merge(sections, token_limit)}
-
+    text_sections = ragflow_plain_sections(pdf_path)
+    tables = camelot_table_sections(pdf_path)
+    chunks = ragflow_naive_merge(text_sections, token_limit)
+    for index, table in enumerate(tables, start=1):
+        table_id = f"table-{index}"
+        chunks.extend(table_chunks(table, table_id, token_limit))
+        chunks.extend(table_context_chunks(text_sections, table, table_id, token_limit))
+    return {"source": str(pdf_path), "sections": text_sections, "chunks": chunks}
 
 def write_pdf_chunk_report(report: dict, report_dir: Path, document_id: str) -> Path:
     report_dir.mkdir(parents=True, exist_ok=True)
     report_path = report_dir / f"{document_id}.json"
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return report_path
-
 
 def ingest_pdf(pdf_path: Path, *, document_id: str, filename: str, settings: Settings, report_dir: Path | None = None) -> dict:
     report = parse_pdf(pdf_path)
@@ -86,12 +140,10 @@ def ingest_pdf(pdf_path: Path, *, document_id: str, filename: str, settings: Set
             "url": "",
             "title": filename,
             "chunk_index": index,
-            "block_type": "general_text",
             "field_code": "",
             "field_name": "",
             "field_english_name": "",
             "detail_type": "",
-            "parent_chunk_id": "",
             "created_at": datetime.now(timezone.utc).isoformat(),
             **chunk,
         }

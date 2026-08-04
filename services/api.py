@@ -40,6 +40,7 @@ def get_system_prompt(personal_instruction: str = "") -> dict:
             "You are a retrieval-augmented generation (RAG) assistant. "
             "Answer the user's question accurately and concisely using the provided context and conversation history as the primary source of truth. "
             "If the available information is insufficient to fully answer, provide a partial answer with what is available and note what is missing. Do not invent facts, sources, or citations. "
+            "When the retrieved source contains table data, include every relevant field and row; do not omit a middle section. "
             "Keep responses well-structured, factual, and directly responsive. Never return an empty or meaningless response. "
             f"{personal_instruction}"
         ),
