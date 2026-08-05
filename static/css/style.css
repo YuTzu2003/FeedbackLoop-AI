@@ -957,9 +957,7 @@ body {
 .notebook-list {
     flex: 1;
     min-height: 100px;
-    max-height: 260px;
     overflow: auto;
-    margin-bottom: 18px;
     border-top: 1px solid var(--line);
 }
 

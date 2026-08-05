@@ -40,6 +40,45 @@ class ElasticsearchStoreTests(unittest.TestCase):
         self.assertIn({"term": {"document_id": "book-1"}}, query["script_score"]["query"]["bool"]["filter"])
         self.assertEqual(results[0]["document_id"], "book-1")
 
+    @patch("services.vectordb.requests.post")
+    @patch("services.vectordb.requests.put")
+    @patch("services.vectordb.embedding", return_value=[0.1, 0.2])
+    def test_indexing_reports_the_rejected_chunk_reason(self, _, put, post):
+        put.return_value.status_code = 400
+        put.return_value.json.return_value = {"error": {"type": "resource_already_exists_exception"}}
+        post.return_value.raise_for_status = Mock()
+        post.return_value.json.return_value = {"errors": True, "items": [{"index": {"_id": "book-1:chunk-1", "error": {"reason": "mapper parsing failed"}}}]}
+
+        with self.assertRaisesRegex(Exception, "chunk book-1:chunk-1: mapper parsing failed"):
+            index_chunks("book-1", [{"chunk_id": "chunk-1", "content": "text"}], self.settings)
+
+    @patch("services.vectordb.requests.post")
+    @patch("services.vectordb.requests.put")
+    @patch("services.vectordb.embedding", return_value=[0.1, 0.2])
+    def test_indexing_reports_bulk_http_response(self, _, put, post):
+        import requests
+        put.return_value.status_code = 400
+        put.return_value.json.return_value = {"error": {"type": "resource_already_exists_exception"}}
+        response = Mock(status_code=429, text="disk watermark exceeded")
+        post.return_value.raise_for_status.side_effect = requests.HTTPError(response=response)
+
+        with self.assertRaisesRegex(Exception, "429.*disk watermark exceeded"):
+            index_chunks("book-1", [{"chunk_id": "chunk-1", "content": "text"}], self.settings)
+
+    @patch("services.vectordb.BULK_MAX_BYTES", 1)
+    @patch("services.vectordb.requests.post")
+    @patch("services.vectordb.requests.put")
+    @patch("services.vectordb.embedding", return_value=[0.1, 0.2])
+    def test_indexing_sends_large_documents_in_multiple_bulk_requests(self, _, put, post):
+        put.return_value.status_code = 400
+        put.return_value.json.return_value = {"error": {"type": "resource_already_exists_exception"}}
+        post.return_value.raise_for_status = Mock()
+        post.return_value.json.return_value = {"errors": False}
+
+        index_chunks("book-1", [{"chunk_id": "one", "content": "first"}, {"chunk_id": "two", "content": "second"}], self.settings)
+
+        self.assertEqual(post.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

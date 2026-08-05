@@ -11,6 +11,7 @@ from pipeline.load_url import ingest_web_url
 from pipeline.load_document import ingest_document
 from services.config import load_settings
 from services.api import load_llm_settings, get_system_prompt
+from services.spreadsheet_analysis import answer_statistics_question, is_statistics_question
 from services.vectordb import RagServiceError, delete_document, elasticsearch_status
 from services.notebook_repositories import (append_jsonl,delete_notebook_data,notebook_data_dir,notebook_history,notebook_history_path,save_upload, create_notebook, delete_notebook as delete_notebook_record, get_notebook, list_notebooks as list_notebook_records)
 import os
@@ -196,7 +197,15 @@ def ask():
     profile = load_profile(app.config["NOTEBOOK_DATA_ROOT"], str(session["id"]))
     personal_instruction = preferences_instruction(profile)
     try:
-        if notebook.get("source_type") in {"web", "pdf", "spreadsheet"}:
+        if notebook.get("source_type") == "spreadsheet" and is_statistics_question(question):
+            spreadsheet = answer_statistics_question(
+                current_notebook_dir(notebook_id) / notebook["stored_filename"],
+                question,
+                llm_settings,
+            )
+            answer = spreadsheet["answer"]
+            sources = [{"source_type": "spreadsheet", "title": notebook["name"], "sheet_name": spreadsheet["sheet_name"], "plan": spreadsheet["plan"]}]
+        elif notebook.get("source_type") in {"web", "pdf", "spreadsheet"}:
             chunks = retrieve_chunks(question, notebook_id, settings, llm_settings, search_mode)
             if not chunks:
                 return jsonify(error="找不到此網址來源的相關內容。"), 404

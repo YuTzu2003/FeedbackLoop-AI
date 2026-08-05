@@ -8,6 +8,7 @@ from services.config import Settings
 
 CHUNK_SIZE = 700
 CHUNK_OVERLAP = 100
+BULK_MAX_BYTES = 512 * 1024
 
 class RagServiceError(Exception):
     def __init__(self, message: str, status_code: int):
@@ -82,18 +83,46 @@ def elasticsearch_status(settings: Settings) -> dict[str, bool]:
 
 def index_chunks(document_id: str, chunks: list[dict[str, Any]], settings: Settings) -> None:
     ensure_index(settings)
+
+    def send_bulk(lines: list[str]) -> None:
+        if not lines:
+            return
+        payload = "\n".join(lines) + "\n"
+        try:
+            response = requests.post(_url(settings, "_bulk?refresh=wait_for"), headers={**_headers(settings), "Content-Type": "application/x-ndjson"}, data=payload, timeout=60)
+            response.raise_for_status()
+            result = response.json()
+            if result.get("errors"):
+                for item in result.get("items", []):
+                    action = item.get("index", {})
+                    if action.get("error"):
+                        error = action["error"]
+                        reason = error.get("reason", "Unknown Elasticsearch indexing error.")
+                        raise RagServiceError(f"Elasticsearch rejected chunk {action.get('_id', 'unknown')}: {reason}", 400)
+                raise RagServiceError("Elasticsearch rejected one or more document chunks.", 400)
+        except requests.HTTPError as error:
+            response = error.response
+            body = response.text[:1000] if response is not None else ""
+            status_code = response.status_code if response is not None else 503
+            raise RagServiceError(f"Elasticsearch bulk indexing failed ({status_code}): {body}", 503) from error
+        except requests.RequestException as error:
+            raise RagServiceError(f"Could not index document chunks in Elasticsearch: {error}", 503) from error
+
     lines: list[str] = []
+    byte_count = 0
     for chunk in chunks:
         chunk_id = str(chunk["chunk_id"])
-        lines.append(json.dumps({"index": {"_index": settings.elasticsearch_index, "_id": f"{document_id}:{chunk_id}"}}))
-        lines.append(json.dumps({**chunk, "document_id": document_id, "embedding": embedding(str(chunk["content"]), settings)}, ensure_ascii=False))
-    try:
-        response = requests.post(_url(settings, "_bulk?refresh=wait_for"), headers={**_headers(settings), "Content-Type": "application/x-ndjson"}, data="\n".join(lines) + "\n", timeout=60)
-        response.raise_for_status()
-        if response.json().get("errors"):
-            raise RagServiceError("Elasticsearch rejected one or more document chunks.", 503)
-    except requests.RequestException as error:
-        raise RagServiceError("Could not index document chunks in Elasticsearch.", 503) from error
+        record = [
+            json.dumps({"index": {"_index": settings.elasticsearch_index, "_id": f"{document_id}:{chunk_id}"}}),
+            json.dumps({**chunk, "document_id": document_id, "embedding": embedding(str(chunk["content"]), settings)}, ensure_ascii=False),
+        ]
+        record_bytes = sum(len(line.encode("utf-8")) + 1 for line in record)
+        if lines and byte_count + record_bytes > BULK_MAX_BYTES:
+            send_bulk(lines)
+            lines, byte_count = [], 0
+        lines.extend(record)
+        byte_count += record_bytes
+    send_bulk(lines)
 
 def delete_document(document_id: str, settings: Settings) -> None:
     query = {"query": {"term": {"document_id": document_id}}}

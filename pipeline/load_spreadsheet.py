@@ -5,10 +5,11 @@ from uuid import uuid4
 import pandas as pd
 from services.config import Settings
 from services.vectordb import CHUNK_SIZE, RagServiceError, index_chunks
+from services.spreadsheet_analysis import workbook_frames
 
 def spreadsheet_sections(path: Path) -> list[str]:
     try:
-        sheets = pd.read_csv(path, dtype=str, keep_default_na=False) if path.suffix.lower() == ".csv" else pd.read_excel(path, sheet_name=None, dtype=str, keep_default_na=False)
+        sheets = workbook_frames(path)
     except (OSError, ValueError, ImportError) as error:
         raise RagServiceError("Spreadsheet parsing failed.", 400) from error
     if not isinstance(sheets, dict):
@@ -34,8 +35,28 @@ def merge_sections(sections: list[str]) -> list[str]:
         chunks.append("\n".join(current))
     return chunks
 
+
+def definition_chunks(path: Path) -> list[dict]:
+    chunks = []
+    for sheet_name, frame in workbook_frames(path).items():
+        if not any(word in sheet_name.casefold() for word in ("definition", "dictionary", "欄位", "代碼")):
+            continue
+        for _, row in frame.fillna("").iterrows():
+            fields = {str(column).strip(): str(value).strip() for column, value in row.items() if str(value).strip()}
+            if not fields:
+                continue
+            code = fields.get("field_code", fields.get("code", ""))
+            chunks.append({
+                "content": "; ".join(f"{column}: {value}" for column, value in fields.items()) + f"; Sheet: {sheet_name}",
+                "block_type": "code_definition" if code else "field_definition",
+                "field_name": fields.get("field_name", fields.get("欄位名稱", "")),
+                "field_code": code,
+            })
+    return chunks
+
 def ingest_spreadsheet(path: Path, *, document_id: str, filename: str, settings: Settings) -> dict:
-    chunks = merge_sections(spreadsheet_sections(path))
+    chunks = [{"content": content, "block_type": "general_text", "field_name": "", "field_code": ""} for content in merge_sections(spreadsheet_sections(path))]
+    chunks.extend(definition_chunks(path))
     if not chunks:
         raise RagServiceError("No readable rows were found in this spreadsheet.", 400)
     index_chunks(document_id, [
@@ -45,9 +66,9 @@ def ingest_spreadsheet(path: Path, *, document_id: str, filename: str, settings:
             "url": "",
             "title": filename,
             "chunk_index": index,
-            "content": content,
+            **chunk,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        for index, content in enumerate(chunks, start=1)
+        for index, chunk in enumerate(chunks, start=1)
     ], settings)
     return {"source_type": "spreadsheet", "chunk_count": len(chunks)}
